@@ -2,13 +2,15 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { recognizeReceipt } from "@/lib/receipts/ocr";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { downloadReceiptImage, ReceiptImageError, selectReceiptImage, type TelegramDocument, type TelegramImageFile } from "@/lib/telegram-media";
 
 export const runtime = "nodejs";
 
 type TelegramMessage = {
   chat: { id: number; type: string };
   text?: string;
-  photo?: Array<{ file_id: string; file_size?: number }>;
+  photo?: TelegramImageFile[];
+  document?: TelegramDocument;
 };
 
 type TelegramCallbackQuery = {
@@ -53,28 +55,6 @@ async function answerCallback(token: string, callbackId: string, text: string) {
   });
 }
 
-async function downloadTelegramPhoto(token: string, fileId: string) {
-  const metadataResponse = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`, {
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!metadataResponse.ok) throw new Error("File info unavailable.");
-  const metadata = await metadataResponse.json() as { ok?: boolean; result?: { file_path?: string; file_size?: number } };
-  const filePath = metadata.result?.file_path;
-  if (!metadata.ok || !filePath) throw new Error("Telegram photo path missing.");
-  if ((metadata.result?.file_size ?? 0) > 20 * 1024 * 1024) throw new Error("Receipt photo is too large.");
-
-  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-  const fileResponse = await fetch(`https://api.telegram.org/file/bot${token}/${encodedPath}`, {
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!fileResponse.ok || !fileResponse.headers.get("content-type")?.startsWith("image/")) {
-    throw new Error("Telegram did not return an image.");
-  }
-  const image = Buffer.from(await fileResponse.arrayBuffer());
-  if (image.length > 20 * 1024 * 1024) throw new Error("Receipt photo is too large.");
-  return image;
-}
-
 function receiptPreview(receipt: PendingReceipt) {
   const amount = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(receipt.amount));
   const date = new Date(`${receipt.transaction_date}T12:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" });
@@ -108,7 +88,7 @@ const helpText = [
   "/catat pemasukan 3000000 Gaji gaji bulanan",
   "/ringkasan — ringkasan bulan ini",
   "/help — bantuan",
-  "Kirim foto struk untuk alur pencatatan struk.",
+  "Kirim foto struk atau file gambar JPG/PNG/WebP (maks. 20 MB).",
 ].join("\n");
 
 export async function POST(request: Request) {
@@ -230,7 +210,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  if (message.photo?.length) {
+  const receiptImage = selectReceiptImage(message);
+  if (message.document && !receiptImage) {
+    await sendMessage(token, message.chat.id, "Format file belum didukung. Kirim struk sebagai foto atau file gambar JPG, PNG, atau WebP (maks. 20 MB).");
+    return NextResponse.json({ ok: true });
+  }
+
+  if (receiptImage) {
     try {
       const { data: alreadySaved } = await admin
         .from("transactions")
@@ -242,9 +228,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      const photo = message.photo[message.photo.length - 1];
-      await sendMessage(token, message.chat.id, "Sedang membaca foto struk dengan OCR lokal…");
-      const image = await downloadTelegramPhoto(token, photo.file_id);
+      await sendMessage(token, message.chat.id, "Sedang membaca gambar struk…");
+      const image = await downloadReceiptImage(token, receiptImage);
       const candidate = await recognizeReceipt(image);
       if (!candidate.amount || !Number.isSafeInteger(candidate.amount)) {
         await sendMessage(token, message.chat.id, "Total belum terbaca dengan yakin. Coba foto yang lebih jelas atau catat manual dengan /catat.");
@@ -289,8 +274,13 @@ export async function POST(request: Request) {
           { text: "Batal", callback_data: `receipt:cancel:${pending.id}` },
         ]],
       });
-    } catch {
-      await sendMessage(token, message.chat.id, "Foto belum bisa dibaca. Coba foto yang lebih terang atau catat manual dengan /catat.");
+    } catch (error) {
+      const reply = error instanceof ReceiptImageError && error.code === "too_large"
+        ? "Gambar terlalu besar. Kirim foto atau file gambar berukuran maksimal 20 MB."
+        : error instanceof ReceiptImageError && error.code === "unsupported_format"
+          ? "File ini bukan gambar JPG, PNG, atau WebP yang didukung. Kirim ulang struk dalam salah satu format tersebut."
+          : "Gambar struk belum bisa diproses. Coba kirim ulang atau catat manual dengan /catat.";
+      await sendMessage(token, message.chat.id, reply);
     }
     return NextResponse.json({ ok: true });
   }

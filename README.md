@@ -215,13 +215,19 @@ Kode pairing berlaku selama **10 menit** dan hanya bisa digunakan satu kali.
 | Catat pengeluaran | `/catat pengeluaran 25000 Makanan makan siang` |
 | Catat pemasukan | `/catat pemasukan 3000000 Gaji gaji bulanan` |
 | Lihat ringkasan | `/ringkasan` |
-| Baca struk | Kirim foto struk ke chat bot, lalu tinjau dan konfirmasi hasil bacanya. |
+| Baca struk | Kirim foto struk atau file gambar JPG/PNG/WebP (maks. 20 MB), lalu tinjau dan konfirmasi hasil bacanya. |
 
 ### Cara kerja pembacaan struk
 
 Tesseract.js membaca gambar di server tanpa biaya API OCR per penggunaan. Model bahasa Indonesia dan Inggris diunduh saat pemakaian pertama.
 
 Bot meminta konfirmasi sebelum menyimpan hasil pembacaan. Foto struk tidak disimpan ke database. Hasil OCR bergantung pada kualitas foto, sehingga detail transaksi tetap perlu diperiksa.
+
+Gambar dapat dikirim sebagai **Photo** maupun **File/Document** di Telegram. Isi file diperiksa sebelum OCR; PDF dan format selain JPG, PNG, atau WebP akan mendapat petunjuk format yang didukung.
+
+Konfigurasi build menyertakan worker dan berkas WASM Tesseract untuk deployment. OCR dibatasi 45 detik dan menyimpan cache model di folder sementara server.
+
+Jalankan `pnpm test` untuk memeriksa penerimaan foto/file, batas unduhan, alur konfirmasi struk, dan penanganan kegagalan worker dengan layanan Telegram dan database tiruan.
 
 ## Deployment
 
