@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { PreferenceControls } from "@/components/preference-controls";
 import { usePreferences } from "@/lib/preferences";
 import { isValidUsername, normalizeUsername } from "@/lib/username";
+import { signInError } from "@/lib/auth-errors";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -53,16 +54,7 @@ export default function LoginPage() {
         });
         const result = await response.json();
         if (!response.ok) {
-          const messages: Record<string, [string, string]> = {
-            invalid_credentials: ["Username, email, or password is incorrect.", "Username, email, atau kata sandi salah."],
-            email_not_confirmed: ["Confirm your email before signing in.", "Konfirmasi email terlebih dahulu sebelum masuk."],
-            username_setup_required: ["Username sign-in is not available yet. You can still sign in with your email.", "Login username belum tersedia. Kamu tetap bisa masuk memakai email."],
-            rate_limited: ["Too many attempts. Wait a minute before trying again.", "Terlalu banyak percobaan. Tunggu satu menit lalu coba lagi."],
-            invalid_request: ["Enter your username or email and password.", "Isi username atau email dan kata sandi."],
-            unavailable: ["Sign-in is temporarily unavailable. Please try again.", "Login sedang tidak tersedia. Silakan coba lagi."],
-          };
-          const message = messages[result.error] ?? messages.unavailable;
-          setError(text(message[0], message[1]));
+          setError(signInError(result.error, language));
           return;
         }
         router.replace("/");
@@ -140,11 +132,12 @@ export default function LoginPage() {
                 <label>{text("Username", "Username")}<input aria-describedby="username-hint" autoCapitalize="none" autoComplete="username" autoCorrect="off" maxLength={30} minLength={3} name="username" pattern="[A-Za-z0-9_]{3,30}" placeholder={text("your_username", "username_kamu")} required spellCheck={false} type="text" /><span className="field-hint" id="username-hint">{text("3–30 letters, numbers, or underscores. Case-insensitive.", "3–30 huruf, angka, atau underscore. Huruf besar/kecil dianggap sama.")}</span></label>
                 <label>{text("Email", "Email")}<input autoComplete="email" name="email" placeholder="name@email.com" required type="email" /></label>
               </>}
-              <label>{text("Password", "Kata sandi")}<input autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} name="password" placeholder={text("At least 8 characters", "Minimal 8 karakter")} required type="password" /></label>
+              <div className="auth-password-field"><div className="auth-field-heading"><label htmlFor="auth-password">{text("Password", "Kata sandi")}</label>{mode === "login" && <Link href="/account-recovery">{text("Forgot password?", "Lupa kata sandi?")}</Link>}</div><input autoComplete={mode === "login" ? "current-password" : "new-password"} id="auth-password" minLength={8} name="password" placeholder={text("At least 8 characters", "Minimal 8 karakter")} required type="password" /></div>
               {error && <p className="auth-feedback error-feedback" role="alert">{error}</p>}
               {message && <p className="auth-feedback success-feedback" role="status">{message}</p>}
               <button className="primary-button auth-submit" disabled={busy} type="submit">{busy ? text("Working…", "Memproses…") : mode === "login" ? text("Sign in to Saku", "Masuk ke Saku") : text("Create account", "Buat akun")}</button>
             </form>
+            {mode === "login" && <nav className="auth-help-links" aria-label={text("Account recovery", "Pemulihan akun")}><Link href="/account-recovery?help=username">{text("Forgot username?", "Lupa username?")}</Link><span aria-hidden="true">·</span><Link href="/account-recovery?help=email">{text("Forgot email?", "Lupa email?")}</Link></nav>}
           </>
         )}
       </section>

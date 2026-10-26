@@ -55,7 +55,7 @@ export default function SettingsPage() {
     <div className="page-content settings-page">
       <div className="page-heading"><div><div className="eyebrow">{text("YOUR WORKSPACE", "RUANG KERJAMU")}</div><h1>{text("Settings", "Pengaturan")}</h1><p className="page-subtitle">{text("Manage your account, appearance, and connected services.", "Kelola akun, tampilan, dan layanan yang terhubung.")}</p></div></div>
 
-      <section className="settings-section">
+      <section className="settings-section" id="account-details">
         <div className="settings-section-heading"><span className="settings-section-icon">◎</span><div><h2>{text("Account", "Akun")}</h2><p>{text("Your sign-in and personal data", "Informasi masuk dan data pribadimu")}</p></div></div>
         <article className="panel settings-card account-settings-card">
           <div className="settings-account-avatar">{email ? email.slice(0, 1).toUpperCase() : "S"}</div>

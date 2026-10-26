@@ -148,6 +148,23 @@ Username terdiri dari **3–30 huruf, angka, atau underscore**. Huruf besar dan 
 
 Email tetap digunakan untuk konfirmasi pendaftaran. Login memakai email tetap tersedia jika secret key server belum dikonfigurasi.
 
+### Pemulihan akun
+
+Halaman login menyediakan **Forgot password?**, **Forgot username?**, dan **Forgot email?**, dengan bahasa Inggris dan Indonesia.
+
+- **Lupa kata sandi:** masukkan email akun, buka tautan yang dikirim Supabase di browser yang sama, lalu buat dan konfirmasi kata sandi baru.
+- **Lupa username:** masuk memakai email dan kata sandi untuk melihat username di **Settings > Account**.
+- **Lupa email:** masuk memakai username dan kata sandi untuk melihat email di **Settings > Account**. Jika email dan kata sandi sama-sama terlupa, pengguna perlu menemukan dan mengakses email terdaftarnya terlebih dahulu.
+
+Di **Supabase > Authentication > URL Configuration > Redirect URLs**, tambahkan alamat callback untuk setiap lingkungan yang dipakai:
+
+```text
+http://localhost:3000/auth/callback
+https://DOMAIN-APLIKASI/auth/callback
+```
+
+Ganti `DOMAIN-APLIKASI` dengan domain deployment sendiri. Pola lokal `http://localhost:3000/**` juga mencakup callback lokal. Biarkan template **Reset Password** memakai tautan bawaan `{{ .ConfirmationURL }}`. Pengiriman email mengikuti konfigurasi SMTP Supabase di atas. Tautan yang kedaluwarsa atau dibuka tanpa verifikasi browser akan diarahkan ke halaman untuk meminta tautan baru.
+
 ## Integrasi Telegram
 
 ### 1. Buat bot
