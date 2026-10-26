@@ -52,7 +52,7 @@ Aplikasi juga menyediakan integrasi bot Telegram untuk mencatat transaksi melalu
 
 ## Mulai cepat
 
-**Kebutuhan:** Node.js 20.9 atau lebih baru dan pnpm. Versi package manager proyek tercantum di [package.json](package.json).
+**Kebutuhan:** Node.js **22.23.4+ pada jalur 22 LTS** atau **24.22.1+ pada jalur 24 LTS**, serta pnpm. Versi lokal acuan ada di [.node-version](.node-version); versi package manager tercantum di [package.json](package.json).
 
 ```powershell
 git clone https://github.com/aguspranajaya2/saku-finance.git
@@ -62,6 +62,12 @@ pnpm dev
 ```
 
 Buka **[http://localhost:3000](http://localhost:3000)**.
+
+Untuk memeriksa build produksi, jalankan `pnpm build`. Pada Windows, bila Turbopack memunculkan error proses `node process exited before we could connect`, gunakan opsi Webpack yang disediakan Next.js dengan Node LTS yang memenuhi versi di atas:
+
+```powershell
+pnpm build --webpack
+```
 
 > **Coba tanpa akun:** Jika kredensial Supabase belum diisi, aplikasi menggunakan mode pratinjau dengan data contoh. Catatan pratinjau dibagikan antarhalaman dan direset saat halaman dimuat ulang.
 
@@ -80,14 +86,17 @@ Setelah Supabase dihubungkan, pengguna perlu login dan transaksi disimpan ke dat
 
 ### 1. Buat proyek dan jalankan migrasi
 
-Buat proyek di [Supabase Dashboard](https://supabase.com/dashboard). Setelah proyek siap, buka **SQL Editor** dan jalankan kedua file berikut secara berurutan:
+Buat proyek di [Supabase Dashboard](https://supabase.com/dashboard). Setelah proyek siap, buka **SQL Editor** dan jalankan file berikut secara berurutan:
 
 | Urutan | File migrasi | Kegunaan |
 | --- | --- | --- |
 | 1 | [202610250001_initial_schema.sql](supabase/migrations/202610250001_initial_schema.sql) | Tabel transaksi, aturan akses per akun, dan tabel integrasi Telegram. |
 | 2 | [202610260001_usernames.sql](supabase/migrations/202610260001_usernames.sql) | Profil pengguna, username unik, dan fungsi login username. |
+| 3 | [202610260002_security_hardening.sql](supabase/migrations/202610260002_security_hardening.sql) | Izin kolom transaksi, pencabutan koneksi bot, otorisasi struk, batas permintaan bersama, dan slot OCR. |
 
 Jalankan setiap migrasi satu kali. Untuk proyek yang sudah dikonfigurasi, terapkan migrasi yang belum dijalankan.
+
+> **Pembaruan dari versi lama:** jalankan migrasi keamanan nomor 3 **sebelum** deploy kode baru. Migrasi menambahkan fungsi yang dibutuhkan pembatasan login dan bot; layanan menolak memproses permintaan jika kontrol keamanan ini belum tersedia. Push Git tidak menjalankan migrasi Supabase secara otomatis.
 
 ### 2. Siapkan file konfigurasi
 
@@ -146,7 +155,7 @@ Username terdiri dari **3–30 huruf, angka, atau underscore**. Huruf besar dan 
 - **Akun lama:** masuk menggunakan email, buka **Settings > Account > Sign-in username**, lalu simpan username.
 - **Saat login:** gunakan username atau email dengan kata sandi akun yang sama.
 
-Email tetap digunakan untuk konfirmasi pendaftaran. Login memakai email tetap tersedia jika secret key server belum dikonfigurasi.
+Email tetap digunakan untuk konfirmasi pendaftaran. Login email maupun username menggunakan pembatasan percobaan bersama di server dan membutuhkan konfigurasi server Supabase serta migrasi keamanan.
 
 ### Pemulihan akun
 
@@ -208,6 +217,8 @@ Daftarkan URL tersebut melalui metode `setWebhook` pada [Telegram Bot API](https
 
 Kode pairing berlaku selama **10 menit** dan hanya bisa digunakan satu kali.
 
+Gunakan **Disconnect Telegram** di Settings untuk mencabut koneksi bot. Pemutusan atau pemindahan koneksi juga membatalkan kode pairing dan struk tertunda yang berkaitan; tombol struk dari chat lama tidak dapat menyimpan transaksi setelah koneksinya dicabut.
+
 ### Perintah bot
 
 | Perintah | Contoh |
@@ -223,11 +234,21 @@ Tesseract.js membaca gambar di server tanpa biaya API OCR per penggunaan. Model 
 
 Bot meminta konfirmasi sebelum menyimpan hasil pembacaan. Foto struk tidak disimpan ke database. Hasil OCR bergantung pada kualitas foto, sehingga detail transaksi tetap perlu diperiksa.
 
-Gambar dapat dikirim sebagai **Photo** maupun **File/Document** di Telegram. Isi file diperiksa sebelum OCR; PDF dan format selain JPG, PNG, atau WebP akan mendapat petunjuk format yang didukung.
+Gambar dapat dikirim sebagai **Photo** maupun **File/Document** di Telegram. Isi file diperiksa sebelum OCR; PDF dan format selain JPG, PNG, atau WebP akan mendapat petunjuk format yang didukung. Gambar dibatasi **20 megapixel**, sisi maksimal **10.000 pixel**, dan satu frame; gambar dinormalisasi sebelum dibaca.
 
 Konfigurasi build menyertakan worker dan berkas WASM Tesseract untuk deployment. OCR dibatasi 45 detik dan menyimpan cache model di folder sementara server.
 
-Jalankan `pnpm test` untuk memeriksa penerimaan foto/file, batas unduhan, alur konfirmasi struk, dan penanganan kegagalan worker dengan layanan Telegram dan database tiruan.
+Pembacaan struk dibatasi **3 per menit dan 20 per hari per akun**, dengan maksimal **2 job aktif** bersama di database. Penghitung dan lease pekerjaan berlaku antar instance server; pesan Telegram yang sama tidak memulai OCR berulang.
+
+Jalankan `pnpm test` untuk menguji alur bot, normalisasi gambar, sesi, header, pembatasan permintaan, serta migrasi dan isolasi dua akun menggunakan PostgreSQL lokal PGlite. Pengujian ini tidak membutuhkan akun atau data Supabase produksi. CI menjalankan tes, build, dan audit dependency pada push/PR; Dependabot menyiapkan pembaruan dependency untuk ditinjau.
+
+### Keamanan operasional
+
+Aplikasi membatasi izin kolom transaksi dan akses per akun, memakai CSP dengan nonce per request, menolak framing, dan mengosongkan data browser ketika identitas sesi berubah. Rahasia server tetap berada di environment variables. Data struk dan pesan yang dikirim lewat Telegram tetap melewati layanan Telegram.
+
+Pengelola tetap perlu mengaktifkan MFA pada akun GitHub/Vercel/Supabase/Telegram, memeriksa Supabase Security Advisor serta kebijakan kata sandi/CAPTCHA, menguji backup dan restore, dan memantau log/kuota hosting. Versi runtime lokal tidak menentukan versi patch runtime Vercel; pastikan hosting menggunakan jalur Node LTS yang didukung. Rekomendasi provider: [Supabase production checklist](https://supabase.com/docs/guides/deployment/going-into-prod).
+
+Pembatasan IP mengandalkan header `x-forwarded-for` yang ditulis ulang oleh proxy hosting tepercaya. Jika memakai hosting selain Vercel, atur reverse proxy agar pengunjung tidak dapat menentukan header IP tersebut sendiri. Batas per akun tetap berlaku terpisah dari batas IP.
 
 ## Deployment
 
@@ -268,7 +289,7 @@ supabase/
 - Profil username hanya dapat dibaca dan diperbarui oleh pemilik akun. Polanya mengikuti [panduan pengelolaan pengguna Supabase](https://supabase.com/docs/guides/auth/managing-user-data).
 - Pencocokan username ke email dijalankan di server. Endpoint login tidak mengembalikan email dari pencocokan tersebut kepada browser.
 - Secret key Supabase dan token bot dipakai pada kode server.
-- Endpoint login memakai respons umum untuk kredensial yang salah, pemeriksaan origin, dan pembatasan percobaan per proses. Deployment dengan banyak instance memerlukan pembatasan bersama pada hosting atau edge.
+- Endpoint login memakai respons umum untuk kredensial yang salah, pemeriksaan origin, serta pembatasan percobaan bersama di database berdasarkan IP dan identitas akun. Pengamanan Supabase Auth seperti CAPTCHA dan batas permintaan provider tetap perlu dikonfigurasi.
 
 </details>
 

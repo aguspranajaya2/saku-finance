@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PreferenceControls } from "@/components/preference-controls";
 import { createClient } from "@/lib/supabase/client";
+import { watchVerifiedSession } from "@/lib/verified-session";
 import { usePreferences } from "@/lib/preferences";
 
 const navigation = [
@@ -28,6 +29,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [email, setEmail] = useState("");
+  const [accountId, setAccountId] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
   const text = (en: string, id: string) => language === "en" ? en : id;
@@ -43,26 +45,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       return;
     }
     setConfigured(true);
-    let active = true;
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (!active) return;
-      if (error || !data.user) {
-        router.replace("/login");
-        return;
-      }
-      setEmail(data.user.email ?? "");
-      setReady(true);
-    }).catch(() => {
-      if (active) router.replace("/login");
+    const watcher = watchVerifiedSession(supabase, {
+      onInvalidated() { setReady(false); setEmail(""); },
+      onUser(user) { setAccountId(user.id); setEmail(user.email ?? ""); setReady(true); },
+      onSignedOut() { setAccountId(null); router.replace("/login"); router.refresh(); },
+      onError() { router.replace("/login"); },
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
-        setReady(false);
-        router.replace("/login");
-        router.refresh();
-      }
-    });
-    return () => { active = false; subscription.unsubscribe(); };
+    return () => watcher.dispose();
   }, [router]);
 
   useEffect(() => {
@@ -127,7 +116,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   if (!ready) return <main className="app-loading"><span className="brand-mark">s</span><span>{text("Checking your account…", "Memeriksa akun…")}</span></main>;
 
   return (
-    <main className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
+    <main className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`} key={accountId ?? "preview"}>
       {mobileOpen && <button aria-label={text("Close navigation", "Tutup navigasi")} className="sidebar-scrim" onClick={() => setMobileOpen(false)} type="button" />}
       <aside className={`sidebar${mobileOpen ? " mobile-open" : ""}`} id="workspace-sidebar" inert={isMobile && !mobileOpen} ref={sidebarRef}>
         <div className="sidebar-brand-row">

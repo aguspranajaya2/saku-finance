@@ -61,7 +61,6 @@ export function transactionToDatabase(transaction: NewTransaction) {
     category: transaction.category,
     description: transaction.title,
     transaction_date: transaction.date,
-    source: "web" as const,
   };
 }
 

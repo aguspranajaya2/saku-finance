@@ -81,25 +81,40 @@ test("handles Telegram download errors without passing data to OCR", async () =>
   await assert.rejects(media.downloadReceiptImage("test-token", { file_id: "missing" }, async () => Response.json({ ok: false }, { status: 404 })), error => error.code === "download_failed");
 });
 
-async function runWebhook(message) {
+async function runWebhook(message, options = {}) {
   const sent = [];
   const writes = [];
+  const answered = [];
+  const rpcCalls = [];
   let recognized = 0;
   const fetcher = async (url, options) => {
     if (String(url).endsWith("/sendMessage")) {
       sent.push(JSON.parse(options.body));
       return Response.json({ ok: true });
     }
+    if (String(url).endsWith("/answerCallbackQuery")) {
+      answered.push(JSON.parse(options.body));
+      return Response.json({ ok: true });
+    }
     if (String(url).includes("/getFile?")) return Response.json({ ok: true, result: { file_path: "documents/images.jpg" } });
     return new Response(jpeg, { headers: { "content-type": "application/octet-stream" } });
   };
   const admin = {
+    async rpc(name, args) {
+      rpcCalls.push({ name, args });
+      if (name === "claim_receipt_job") return { data: { status: options.claim ?? "claimed", lease_id: options.claim && options.claim !== "claimed" ? null : "00000000-0000-0000-0000-000000000002" }, error: options.claimError ?? null };
+      if (name === "finish_receipt_job") return { data: true, error: null };
+      if (name === "confirm_pending_receipt") return { data: options.confirmStatus ?? "confirmed", error: null };
+      if (name === "cancel_pending_receipt") return { data: options.cancelStatus ?? "cancelled", error: null };
+      throw Error("Unexpected RPC " + name);
+    },
     from(table) {
       const query = {
         delete() { return query; }, lt() { return Promise.resolve({ error: null }); },
         select() { return query; }, eq() { return query; },
-        maybeSingle() { return Promise.resolve({ data: table === "telegram_connections" ? { user_id: "test-user" } : null }); },
+        maybeSingle() { return Promise.resolve({ data: table === "telegram_connections" ? { user_id: "test-user" } : table === "transactions" ? options.existingTransaction ?? null : null }); },
         insert(data) { writes.push({ table, data }); return query; },
+        then(resolve, reject) { return Promise.resolve({ error: table === "transactions" && options.transactionConflict ? { code: "23505" } : null }).then(resolve, reject); },
         single() { return Promise.resolve({ data: { id: "00000000-0000-0000-0000-000000000001", merchant: "TEST SHOP", amount: 25000, transaction_date: "2026-10-26", confidence: 90 }, error: null }); },
       };
       return query;
@@ -109,17 +124,18 @@ async function runWebhook(message) {
   const route = loadTypeScript("app/api/telegram/webhook/route.ts", {
     modules: {
       "next/server": { NextResponse },
-      "@/lib/telegram-media": isolatedMedia,
+      "@/lib/telegram-media": { ...isolatedMedia, normalizeReceiptImage: async image => image },
+      "@/lib/security-limits": { consumeSecurityLimits: async () => ({ allowed: options.securityAllowed !== false, retryAfter: 60 }) },
       "@/lib/supabase/admin": { createAdminClient: () => admin },
-      "@/lib/receipts/ocr": { recognizeReceipt: async () => { recognized++; return { merchant: "TEST SHOP", amount: 25000, date: "2026-10-26", confidence: 90 }; } },
+      "@/lib/receipts/ocr": { ReceiptOcrBusyError: class extends Error {}, recognizeReceipt: async () => { recognized++; return { merchant: "TEST SHOP", amount: 25000, date: "2026-10-26", confidence: 90 }; } },
     },
     globals: { fetch: fetcher, process: { env: { TELEGRAM_BOT_TOKEN: "test-token", TELEGRAM_WEBHOOK_SECRET: "test-secret" } } },
   });
   const response = await route.POST(new Request("https://saku.example/api/telegram/webhook", {
     method: "POST", headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "test-secret" },
-    body: JSON.stringify({ update_id: 123, message: { chat: { id: 1, type: "private" }, ...message } }),
+    body: JSON.stringify(options.callback ? { update_id: 123, callback_query: { id: "callback-test", message: { chat: { id: 1, type: "private" } }, ...options.callback } } : { update_id: 123, message: { chat: { id: 1, type: "private" }, ...message } }),
   }));
-  return { response, sent, writes, recognized };
+  return { response, sent, writes, recognized, rpcCalls, answered };
 }
 
 test("webhook processes both a Telegram photo and an images.jpg document through the confirmation flow", async () => {
@@ -134,7 +150,57 @@ test("webhook processes both a Telegram photo and an images.jpg document through
     assert.equal(result.writes[0].table, "pending_receipts");
     assert.ok(result.sent.some(reply => reply.reply_markup?.inline_keyboard[0][0].text === "Simpan transaksi"));
     assert.ok(!result.sent.some(reply => reply.text.includes("belum mengenali perintah")));
+    assert.ok(result.rpcCalls.some(call => call.name === "claim_receipt_job"));
+    assert.ok(result.rpcCalls.some(call => call.name === "finish_receipt_job"));
   }
+});
+
+test("duplicate OCR updates never start a worker or create another receipt", async () => {
+  const result = await runWebhook({ photo: [{ file_id: "photo" }] }, { claim: "duplicate" });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.recognized, 0);
+  assert.equal(result.writes.length, 0);
+  assert.equal(result.sent.length, 0);
+});
+
+test("busy, revoked, and over-quota receipt jobs are rejected before downloads and OCR", async () => {
+  for (const claim of ["busy", "unlinked", "rate_limited"]) {
+    const result = await runWebhook({ photo: [{ file_id: "photo" }] }, { claim });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.recognized, 0);
+    assert.equal(result.writes.length, 0);
+    assert.equal(result.sent.length, 1);
+  }
+});
+
+test("receipt job protection fails closed when the database function is unavailable", async () => {
+  const result = await runWebhook({ photo: [{ file_id: "photo" }] }, { claimError: { message: "migration missing" } });
+  assert.equal(result.response.status, 503);
+  assert.equal(result.recognized, 0);
+  assert.equal(result.writes.length, 0);
+});
+
+test("receipt callback cannot report a database collision as a successful save", async () => {
+  const result = await runWebhook({}, { callback: { data: "receipt:save:00000000-0000-0000-0000-000000000001" }, confirmStatus: "conflict" });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.sent.length, 0);
+  assert.ok(result.answered[0].text.includes("belum disimpan"));
+});
+
+test("text transaction collisions cannot be reported as the owner's saved message", async () => {
+  const result = await runWebhook({ text: "/catat pengeluaran 25000 Makanan makan siang" }, { transactionConflict: true });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.sent[0].text.includes("belum tersimpan"));
+  const duplicate = await runWebhook({ text: "/catat pengeluaran 25000 Makanan makan siang" }, { transactionConflict: true, existingTransaction: { id: "own-existing" } });
+  assert.ok(duplicate.sent[0].text.includes("sudah pernah dicatat"));
+});
+
+test("cancel uses the atomic authorization RPC and rejects a revoked receipt button", async () => {
+  const result = await runWebhook({}, { callback: { data: "receipt:cancel:00000000-0000-0000-0000-000000000001" }, cancelStatus: "invalid" });
+  assert.equal(result.sent.length, 0);
+  assert.ok(result.rpcCalls.some(call => call.name === "cancel_pending_receipt"));
+  assert.ok(result.answered[0].text.includes("koneksi sudah berubah"));
+  assert.equal(result.writes.length, 0);
 });
 
 test("webhook gives unsupported documents a format hint and makes no receipt or transaction", async () => {

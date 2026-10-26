@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { dirname, join, relative } from "node:path";
 import type { NextConfig } from "next";
+import { securityHeaders } from "./lib/security-headers";
 
 const projectRequire = createRequire(join(process.cwd(), "package.json"));
 const tesseractPackage = projectRequire.resolve("tesseract.js/package.json");
@@ -27,6 +28,10 @@ const workerFiles = [
 ];
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
+  },
   // The OCR worker loads its own modules outside Next.js's bundled route.
   serverExternalPackages: ["tesseract.js"],
   outputFileTracingIncludes: {

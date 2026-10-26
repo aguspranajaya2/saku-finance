@@ -1,12 +1,15 @@
 import { Buffer } from "node:buffer";
+import sharp from "sharp";
 
 export const MAX_RECEIPT_IMAGE_BYTES = 20 * 1024 * 1024;
+export const MAX_RECEIPT_IMAGE_PIXELS = 20_000_000;
+export const MAX_RECEIPT_IMAGE_DIMENSION = 10_000;
 
 export type TelegramImageFile = { file_id: string; file_size?: number };
 export type TelegramDocument = TelegramImageFile & { file_name?: string; mime_type?: string };
 
 export class ReceiptImageError extends Error {
-  constructor(public readonly code: "too_large" | "unsupported_format" | "download_failed") {
+  constructor(public readonly code: "too_large" | "unsupported_format" | "download_failed" | "too_many_pixels" | "invalid_image") {
     super(code);
     this.name = "ReceiptImageError";
   }
@@ -27,6 +30,65 @@ function isSupportedImage(image: Buffer) {
   const png = image.length >= 8 && image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   const webp = image.length >= 12 && image.toString("ascii", 0, 4) === "RIFF" && image.toString("ascii", 8, 12) === "WEBP";
   return jpeg || png || webp;
+}
+
+function isAnimatedPng(image: Buffer) {
+  if (image.toString("ascii", 1, 4) !== "PNG") return false;
+  let offset = 8;
+  while (offset + 12 <= image.length) {
+    const length = image.readUInt32BE(offset);
+    if (image.toString("ascii", offset + 4, offset + 8) === "acTL") return true;
+    if (length > image.length - offset - 12) break;
+    offset += length + 12;
+  }
+  return false;
+}
+
+/** Fully decode bounded, single-frame input before passing any image to OCR. */
+export async function normalizeReceiptImage(image: Buffer): Promise<Buffer> {
+  if (image.length > MAX_RECEIPT_IMAGE_BYTES) throw new ReceiptImageError("too_large");
+  if (!isSupportedImage(image)) throw new ReceiptImageError("unsupported_format");
+  // libvips reads only the first frame of APNG; reject its animation control chunk.
+  if (isAnimatedPng(image)) throw new ReceiptImageError("invalid_image");
+
+  try {
+    const decoder = sharp(image, {
+      limitInputPixels: MAX_RECEIPT_IMAGE_PIXELS,
+      limitInputChannels: 4,
+      failOn: "error",
+      sequentialRead: true,
+      animated: false,
+    });
+    const metadata = await decoder.metadata();
+    if (!["jpeg", "png", "webp"].includes(metadata.format) || (metadata.pages ?? 1) !== 1) {
+      throw new ReceiptImageError("invalid_image");
+    }
+    const { width, height } = metadata;
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
+      throw new ReceiptImageError("invalid_image");
+    }
+    if (width > MAX_RECEIPT_IMAGE_DIMENSION || height > MAX_RECEIPT_IMAGE_DIMENSION || width * height > MAX_RECEIPT_IMAGE_PIXELS) {
+      throw new ReceiptImageError("too_many_pixels");
+    }
+
+    const normalized = await decoder
+      .rotate()
+      .resize({ width: 2500, height: 6000, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .toColourspace("srgb")
+      .png({ compressionLevel: 6 })
+      .timeout({ seconds: 10 })
+      .toBuffer();
+    if (normalized.length > MAX_RECEIPT_IMAGE_BYTES) throw new ReceiptImageError("too_large");
+    return normalized;
+  } catch (error) {
+    if (error instanceof ReceiptImageError) throw error;
+    if (error && typeof error === "object" && "message" in error && typeof error.message === "string" && /pixel limit/i.test(error.message)) {
+      throw new ReceiptImageError("too_many_pixels");
+    }
+    // Native decoder messages can contain input details; expose only fixed codes.
+    throw new ReceiptImageError("invalid_image");
+  }
 }
 
 export async function downloadReceiptImage(token: string, file: TelegramImageFile, fetcher: typeof fetch = fetch) {

@@ -4,12 +4,32 @@ import { join } from "node:path";
 import { createWorker } from "tesseract.js";
 import { parseReceipt } from "@/lib/receipts/parse";
 
+const MAX_PROCESS_WORKERS = 2;
+let activeWorkers = 0;
+
+export class ReceiptOcrBusyError extends Error {
+  constructor() {
+    super("Receipt OCR is busy.");
+    this.name = "ReceiptOcrBusyError";
+  }
+}
+
 export async function recognizeReceipt(image: Buffer) {
+  if (activeWorkers >= MAX_PROCESS_WORKERS) throw new ReceiptOcrBusyError();
+  activeWorkers++;
   const cachePath = join(tmpdir(), "saku-tesseract-cache");
 
   type OcrWorker = Awaited<ReturnType<typeof createWorker>>;
   let worker: OcrWorker | undefined;
   let finished = false;
+  let initializationPending = false;
+  let slotReleased = false;
+  function releaseSlot() {
+    if (!slotReleased) {
+      slotReleased = true;
+      activeWorkers--;
+    }
+  }
   let rejectFailure!: (error: Error) => void;
   const failure = new Promise<never>((_, reject) => { rejectFailure = reject; });
   // Initialization can report an error before the first Promise.race is attached.
@@ -21,8 +41,10 @@ export async function recognizeReceipt(image: Buffer) {
   async function stopWorker(created: OcrWorker) {
     try {
       await created.terminate();
+      return true;
     } catch {
       // Cleanup must not replace a successful result or the original OCR failure.
+      return false;
     }
   }
 
@@ -33,14 +55,19 @@ export async function recognizeReceipt(image: Buffer) {
       // Tesseract otherwise throws from its message callback outside this try/catch.
       errorHandler: () => rejectFailure(failedError),
     });
+    initializationPending = true;
     void initialization.then((created) => {
+      initializationPending = false;
       if (finished) {
         // Initialization may complete after our deadline or an initialization error.
-        void stopWorker(created);
+        void stopWorker(created).then(stopped => { if (stopped) releaseSlot(); });
       } else {
         worker = created;
       }
-    }, () => {});
+    }, () => {
+      initializationPending = false;
+      if (finished) releaseSlot();
+    });
 
     worker = await Promise.race([initialization, failure]);
     const { data } = await Promise.race([worker.recognize(image), failure]);
@@ -51,6 +78,12 @@ export async function recognizeReceipt(image: Buffer) {
   } finally {
     finished = true;
     clearTimeout(deadline);
-    if (worker) await stopWorker(worker);
+    if (worker) {
+      if (await stopWorker(worker)) releaseSlot();
+    } else if (!initializationPending) {
+      releaseSlot();
+    }
+    // Keep the slot while initialization is unresolved; a deadline must not allow
+    // an unlimited number of still-starting native workers in the same process.
   }
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PreferenceControls } from "@/components/preference-controls";
 import { usePreferences } from "@/lib/preferences";
 import { createClient } from "@/lib/supabase/client";
 import { UsernameSettings } from "@/components/username-settings";
+import { watchVerifiedSession } from "@/lib/verified-session";
 
 export default function SettingsPage() {
   const { language, theme } = usePreferences();
@@ -16,38 +17,52 @@ export default function SettingsPage() {
   const [pairingCode, setPairingCode] = useState("");
   const [pairingLink, setPairingLink] = useState("");
   const [pairingMessage, setPairingMessage] = useState("");
-  const [pairingBusy, setPairingBusy] = useState(false);
+  const [pairingAction, setPairingAction] = useState<"pair" | "disconnect" | "">("");
+  const pairingBusy = Boolean(pairingAction);
+  const operation = useRef(0);
 
   useEffect(() => {
     const supabase = createClient();
     if (!supabase) return;
     setConfigured(true);
-    let active = true;
-    supabase.auth.getUser().then(({ data }) => {
-      if (active) { setEmail(data.user?.email ?? ""); setUserId(data.user?.id ?? null); }
-    }).catch(() => {});
-    return () => { active = false; };
+    function clearAccount() {
+      operation.current += 1;
+      setEmail(""); setUserId(null);
+      setPairingCode(""); setPairingLink(""); setPairingMessage(""); setPairingAction("");
+    }
+    const watcher = watchVerifiedSession(supabase, {
+      onInvalidated: clearAccount,
+      onUser(user) { setEmail(user.email ?? ""); setUserId(user.id); },
+      onSignedOut: clearAccount,
+      onError: clearAccount,
+    });
+    return () => { operation.current += 1; watcher.dispose(); };
   }, []);
 
-  async function requestTelegramPairing() {
-    setPairingBusy(true);
+  async function requestTelegram(action: "pair" | "disconnect") {
+    if (pairingBusy || !userId) return;
+    const currentOperation = ++operation.current;
+    setPairingAction(action);
     setPairingMessage("");
     setPairingCode("");
     setPairingLink("");
     try {
-      const response = await fetch("/api/telegram/pair", { method: "POST" });
+      const response = await fetch(`/api/telegram/${action}`, { method: "POST" });
       const result = await response.json();
+      if (operation.current !== currentOperation) return;
       if (!response.ok) {
-        setPairingMessage(result.error ?? text("Could not create a pairing code.", "Kode pairing belum bisa dibuat."));
+        setPairingMessage(result.error ?? text("Could not update your Telegram connection.", "Koneksi Telegram belum bisa diperbarui."));
+      } else if (action === "disconnect") {
+        setPairingMessage("disconnected");
       } else {
         setPairingCode(result.code);
         setPairingLink(result.link ?? "");
         setPairingMessage("created");
       }
     } catch {
-      setPairingMessage("connection");
+      if (operation.current === currentOperation) setPairingMessage("connection");
     } finally {
-      setPairingBusy(false);
+      if (operation.current === currentOperation) setPairingAction("");
     }
   }
 
@@ -63,7 +78,7 @@ export default function SettingsPage() {
           {configured ? <span className="account-status"><i />{text("Protected", "Terlindungi")}</span> : <Link className="secondary-button" href="/login">{text("Set up sign in", "Atur login")}</Link>}
         </article>
         <div className="settings-security-note"><span>✓</span><p>{text("Your financial records are private to your account.", "Catatan keuanganmu hanya dapat diakses oleh akunmu.")}</p></div>
-        {configured && userId && <UsernameSettings userId={userId} />}
+        {configured && userId && <UsernameSettings key={userId} userId={userId} />}
       </section>
 
       <section className="settings-section">
@@ -78,9 +93,10 @@ export default function SettingsPage() {
         <div className="settings-section-heading"><span className="settings-section-icon telegram-settings-icon">➤</span><div><h2>{text("Telegram bot", "Bot Telegram")}</h2><p>{text("Record activity from your private Telegram chat", "Catat transaksi lewat chat Telegram pribadimu")}</p></div></div>
         <article className="panel settings-card telegram-settings-card">
           <div className="telegram-settings-intro"><strong>{text("Connect your Saku bot", "Hubungkan bot Saku")}</strong><p>{text("Send a transaction or receipt photo. Review the extracted details before saving.", "Kirim transaksi atau foto struk. Tinjau hasil baca sebelum disimpan.")}</p></div>
-          <button className="primary-button" disabled={!configured || pairingBusy} onClick={requestTelegramPairing} type="button">{pairingBusy ? text("Creating code…", "Membuat kode…") : configured ? text("Create pairing code", "Buat kode pairing") : text("Set up account first", "Atur akun terlebih dahulu")}</button>
+          <button className="primary-button" disabled={!configured || !userId || pairingBusy} onClick={() => void requestTelegram("pair")} type="button">{pairingAction === "pair" ? text("Creating code…", "Membuat kode…") : configured ? text("Create pairing code", "Buat kode pairing") : text("Set up account first", "Atur akun terlebih dahulu")}</button>
+          {configured && <button className="secondary-button" disabled={!userId || pairingBusy} onClick={() => void requestTelegram("disconnect")} type="button">{pairingAction === "disconnect" ? text("Disconnecting…", "Memutus koneksi…") : text("Disconnect Telegram", "Putuskan koneksi Telegram")}</button>}
           {!configured && <p className="telegram-setup-hint">{text("Connect Supabase to create an account and link the bot.", "Hubungkan Supabase untuk membuat akun dan mengaitkan bot.")} <Link href="/login">{text("Account setup", "Atur akun")}</Link></p>}
-          {pairingMessage && <p className={`pairing-message${pairingMessage === "created" ? " pairing-success" : ""}`}>{pairingMessage === "created" ? text("Code expires in 10 minutes. Send it privately to your bot.", "Kode berlaku 10 menit. Kirim secara pribadi ke bot.") : pairingMessage === "connection" ? text("Connection failed. Try again.", "Koneksi gagal. Coba lagi.") : pairingMessage}</p>}
+          {pairingMessage && <p className={`pairing-message${pairingMessage === "created" || pairingMessage === "disconnected" ? " pairing-success" : ""}`} role="status">{pairingMessage === "created" ? text("Code expires in 10 minutes. Send it privately to your bot.", "Kode berlaku 10 menit. Kirim secara pribadi ke bot.") : pairingMessage === "disconnected" ? text("Telegram disconnected. Previous pairing codes and pending receipts have been revoked.", "Telegram sudah diputus. Kode pairing dan struk yang belum disimpan telah dicabut.") : pairingMessage === "connection" ? text("Connection failed. Try again.", "Koneksi gagal. Coba lagi.") : pairingMessage}</p>}
           {pairingCode && <div className="pairing-result settings-pairing-result"><code>{pairingCode}</code>{pairingLink && <a href={pairingLink} rel="noreferrer" target="_blank">{text("Open Telegram chat", "Buka chat Telegram")} ↗</a>}</div>}
         </article>
       </section>

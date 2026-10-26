@@ -76,3 +76,58 @@ test("worker cleanup errors do not turn a successful receipt into failure", asyn
   }));
   assert.equal((await ocr.recognize(Buffer.alloc(0))).amount, 25000);
 });
+
+test("only two OCR workers can run at once and capacity returns after termination", async () => {
+  const jobs = [];
+  let started = 0;
+  let terminated = 0;
+  const ocr = setup(async () => {
+    started++;
+    return {
+      recognize: () => new Promise(resolve => { jobs.push(resolve); }),
+      terminate: async () => { terminated++; },
+    };
+  });
+  const first = ocr.recognize(Buffer.alloc(0));
+  const second = ocr.recognize(Buffer.alloc(0));
+  await tick();
+  await assert.rejects(ocr.recognize(Buffer.alloc(0)), error => error.name === "ReceiptOcrBusyError" && error.message === "Receipt OCR is busy.");
+  assert.equal(started, 2);
+
+  const result = { data: { text: "TEST SHOP\nTOTAL 25000", confidence: 90 } };
+  jobs[0](result);
+  await first;
+  const third = ocr.recognize(Buffer.alloc(0));
+  await tick();
+  assert.equal(started, 3);
+  jobs[1](result);
+  jobs[2](result);
+  await Promise.all([second, third]);
+  assert.equal(terminated, 3);
+});
+
+test("initialization failures keep slots until still-starting workers settle", async () => {
+  const ocr = setup((languages, mode, options) => {
+    queueMicrotask(() => options.errorHandler(new Error("private initialization detail")));
+    return new Promise(() => {});
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(ocr.recognize(Buffer.alloc(0)), error => error.message === "Receipt OCR failed.");
+  }
+  await assert.rejects(ocr.recognize(Buffer.alloc(0)), error => error.name === "ReceiptOcrBusyError");
+});
+
+test("failed termination retains the slot instead of creating unlimited live workers", async () => {
+  let started = 0;
+  const ocr = setup(async () => {
+    started++;
+    return {
+      recognize: async () => ({ data: { text: "TOTAL 25000", confidence: 90 } }),
+      terminate: async () => { throw new Error("worker did not stop"); },
+    };
+  });
+  await ocr.recognize(Buffer.alloc(0));
+  await ocr.recognize(Buffer.alloc(0));
+  await assert.rejects(ocr.recognize(Buffer.alloc(0)), error => error.name === "ReceiptOcrBusyError");
+  assert.equal(started, 2);
+});

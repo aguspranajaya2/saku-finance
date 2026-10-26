@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { recognizeReceipt } from "@/lib/receipts/ocr";
+import { recognizeReceipt, ReceiptOcrBusyError } from "@/lib/receipts/ocr";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { downloadReceiptImage, ReceiptImageError, selectReceiptImage, type TelegramDocument, type TelegramImageFile } from "@/lib/telegram-media";
+import { downloadReceiptImage, normalizeReceiptImage, ReceiptImageError, selectReceiptImage, type TelegramDocument, type TelegramImageFile } from "@/lib/telegram-media";
+import { consumeSecurityLimits } from "@/lib/security-limits";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type TelegramMessage = {
   chat: { id: number; type: string };
@@ -97,7 +99,9 @@ export async function POST(request: Request) {
   if (!token || !webhookSecret) {
     return NextResponse.json({ error: "Telegram belum dikonfigurasi." }, { status: 503 });
   }
-  if (request.headers.get("x-telegram-bot-api-secret-token") !== webhookSecret) {
+  const suppliedSecret = Buffer.from(request.headers.get("x-telegram-bot-api-secret-token") ?? "");
+  const expectedSecret = Buffer.from(webhookSecret);
+  if (suppliedSecret.length !== expectedSecret.length || !timingSafeEqual(suppliedSecret, expectedSecret)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
@@ -105,6 +109,9 @@ export async function POST(request: Request) {
   try {
     update = (await request.json()) as TelegramUpdate;
   } catch {
+    return NextResponse.json({ error: "Invalid update." }, { status: 400 });
+  }
+  if (!update || !Number.isSafeInteger(update.update_id) || update.update_id < 0) {
     return NextResponse.json({ error: "Invalid update." }, { status: 400 });
   }
 
@@ -116,8 +123,14 @@ export async function POST(request: Request) {
   let admin;
   try {
     admin = createAdminClient();
+    const allowance = await consumeSecurityLimits(admin, [{ scope: "telegram-chat-minute", value: String(chat.id), limit: 30, windowSeconds: 60 }]);
+    if (!allowance.allowed) {
+      if (callback) await answerCallback(token, callback.id, "Terlalu banyak permintaan. Coba lagi sebentar.");
+      else await sendMessage(token, chat.id, "Terlalu banyak permintaan. Coba lagi sebentar.");
+      return NextResponse.json({ ok: true });
+    }
   } catch {
-    return NextResponse.json({ error: "Supabase server credentials are missing." }, { status: 503 });
+    return NextResponse.json({ error: "Security controls are temporarily unavailable." }, { status: 503 });
   }
   await admin.from("pending_receipts").delete().lt("expires_at", new Date().toISOString());
 
@@ -137,7 +150,7 @@ export async function POST(request: Request) {
       const statusValue = Array.isArray(result) ? result[0] : result;
       const status = typeof statusValue === "string" ? statusValue : "invalid";
       if (error || status !== "confirmed") {
-        await answerCallback(token, callback.id, "Struk kedaluwarsa atau sudah diproses.");
+        await answerCallback(token, callback.id, status === "conflict" ? "Struk belum disimpan karena benturan data. Coba kirim ulang." : "Struk kedaluwarsa, koneksi sudah berubah, atau sudah diproses.");
         return NextResponse.json({ ok: true });
       }
       await answerCallback(token, callback.id, "Transaksi tersimpan.");
@@ -145,15 +158,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const { data: cancelled, error } = await admin
-      .from("pending_receipts")
-      .delete()
-      .eq("id", receiptId)
-      .eq("chat_id", callback.message.chat.id)
-      .select("id")
-      .maybeSingle();
-    await answerCallback(token, callback.id, cancelled && !error ? "Dibatalkan." : "Struk kedaluwarsa atau sudah diproses.");
-    if (cancelled && !error) {
+    const { data: cancelStatus, error } = await admin.rpc("cancel_pending_receipt", {
+      p_pending_receipt_id: receiptId,
+      p_chat_id: callback.message.chat.id,
+    });
+    const cancelled = cancelStatus === "cancelled" && !error;
+    await answerCallback(token, callback.id, cancelled ? "Dibatalkan." : "Struk kedaluwarsa, koneksi sudah berubah, atau sudah diproses.");
+    if (cancelled) {
       await sendMessage(token, callback.message.chat.id, "Struk tidak disimpan. Untuk koreksi, catat nominal secara manual dengan /catat.");
     }
     return NextResponse.json({ ok: true });
@@ -217,11 +228,30 @@ export async function POST(request: Request) {
   }
 
   if (receiptImage) {
+    const { data: claim, error: claimError } = await admin.rpc("claim_receipt_job", {
+      p_update_id: update.update_id,
+      p_user_id: connection.user_id,
+      p_chat_id: message.chat.id,
+    });
+    if (claimError) return NextResponse.json({ error: "Receipt security controls are unavailable." }, { status: 503 });
+    const job = claim as { status?: string; lease_id?: string } | null;
+    if (!job || typeof job !== "object" || !["claimed", "duplicate", "busy", "unlinked", "rate_limited"].includes(job.status ?? "") || (job.status === "claimed" && !/^[0-9a-f-]{36}$/i.test(job.lease_id ?? ""))) {
+      return NextResponse.json({ error: "Receipt security controls are unavailable." }, { status: 503 });
+    }
+    if (job?.status === "duplicate") return NextResponse.json({ ok: true });
+    if (job?.status !== "claimed" || !job.lease_id) {
+      const reply = job?.status === "rate_limited"
+        ? "Batas pembacaan struk tercapai (3 per menit, 20 per hari). Coba lagi nanti atau catat manual dengan /catat."
+        : job?.status === "unlinked" ? "Koneksi akun sudah berubah. Hubungkan bot kembali melalui Saku." : "Pembaca struk sedang penuh. Coba kirim ulang sebentar lagi.";
+      await sendMessage(token, message.chat.id, reply);
+      return NextResponse.json({ ok: true });
+    }
     try {
       const { data: alreadySaved } = await admin
         .from("transactions")
         .select("id")
         .eq("telegram_update_id", update.update_id)
+        .eq("user_id", connection.user_id)
         .maybeSingle();
       if (alreadySaved) {
         await sendMessage(token, message.chat.id, "Foto struk ini sudah pernah disimpan.");
@@ -229,7 +259,7 @@ export async function POST(request: Request) {
       }
 
       await sendMessage(token, message.chat.id, "Sedang membaca gambar struk…");
-      const image = await downloadReceiptImage(token, receiptImage);
+      const image = await normalizeReceiptImage(await downloadReceiptImage(token, receiptImage));
       const candidate = await recognizeReceipt(image);
       if (!candidate.amount || !Number.isSafeInteger(candidate.amount)) {
         await sendMessage(token, message.chat.id, "Total belum terbaca dengan yakin. Coba foto yang lebih jelas atau catat manual dengan /catat.");
@@ -257,6 +287,8 @@ export async function POST(request: Request) {
         const existing = await admin.from("pending_receipts")
           .select("id, merchant, amount, transaction_date, date_was_defaulted, confidence")
           .eq("telegram_update_id", update.update_id)
+          .eq("user_id", connection.user_id)
+          .eq("chat_id", message.chat.id)
           .maybeSingle();
         receipt = existing.data;
         receiptError = existing.error;
@@ -277,10 +309,19 @@ export async function POST(request: Request) {
     } catch (error) {
       const reply = error instanceof ReceiptImageError && error.code === "too_large"
         ? "Gambar terlalu besar. Kirim foto atau file gambar berukuran maksimal 20 MB."
+        : error instanceof ReceiptImageError && error.code === "too_many_pixels"
+          ? "Dimensi gambar terlalu besar. Kirim gambar maksimal 20 megapixel dan sisi maksimal 10.000 pixel."
+        : error instanceof ReceiptImageError && error.code === "invalid_image"
+          ? "Gambar rusak atau memiliki beberapa frame. Kirim satu gambar struk JPG, PNG, atau WebP."
+        : error instanceof ReceiptOcrBusyError
+          ? "Pembaca struk sedang penuh. Coba kirim ulang sebentar lagi."
         : error instanceof ReceiptImageError && error.code === "unsupported_format"
           ? "File ini bukan gambar JPG, PNG, atau WebP yang didukung. Kirim ulang struk dalam salah satu format tersebut."
           : "Gambar struk belum bisa diproses. Coba kirim ulang atau catat manual dengan /catat.";
       await sendMessage(token, message.chat.id, reply);
+    } finally {
+      // A stale lease expires automatically even if the release request fails.
+      await admin.rpc("finish_receipt_job", { p_update_id: update.update_id, p_user_id: connection.user_id, p_lease_id: job.lease_id }).then(() => {}, () => {});
     }
     return NextResponse.json({ ok: true });
   }
@@ -340,7 +381,14 @@ export async function POST(request: Request) {
       telegram_update_id: update.update_id,
     });
     if (error?.code === "23505") {
-      await sendMessage(token, message.chat.id, "Pesan ini sudah pernah dicatat.");
+      const { data: existing, error: lookupError } = await admin.from("transactions")
+        .select("id")
+        .eq("telegram_update_id", update.update_id)
+        .eq("user_id", connection.user_id)
+        .maybeSingle();
+      await sendMessage(token, message.chat.id, existing && !lookupError
+        ? "Pesan ini sudah pernah dicatat."
+        : "Transaksi belum tersimpan karena benturan data. Coba kirim ulang pesan.");
       return NextResponse.json({ ok: true });
     }
     if (error) {
