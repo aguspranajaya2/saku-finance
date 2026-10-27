@@ -1,0 +1,22 @@
+"use client";
+import { useState } from "react";
+import Link from "next/link";
+import { useLedger } from "@/components/ledger-provider";
+import { JournalDialog } from "@/components/journal-dialog";
+import { JournalList, LedgerStatus, useLedgerText } from "@/components/ledger-ui";
+import { accountBalances, todayDate, type QuickKind } from "@/lib/ledger";
+
+export default function DebtsPage() {
+  const { accounts, entries, loading, clearError } = useLedger(); const { t, money } = useLedgerText();
+  const [open, setOpen] = useState(false), [kind, setKind] = useState<QuickKind>("borrow"), [selected, setSelected] = useState<string | undefined>();
+  const balances = accountBalances(accounts, entries, todayDate()).filter(a => a.account_type === "liability" || a.role === "receivable");
+  function launch(next: QuickKind, account?: string) { clearError(); setKind(next); setSelected(account); setOpen(true); }
+  const history = selected ? entries.filter(e => e.journal_lines.some(l => l.account_id === selected)).sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.created_at.localeCompare(a.created_at)) : [];
+  return <div className="page-content ledger-page"><div className="page-heading"><div><div className="eyebrow">{t("WHAT YOU OWE & ARE OWED", "YANG KAMU PINJAM & PINJAMKAN")}</div><h1>{t("Debts & receivables", "Utang & piutang")}</h1><p className="page-subtitle">{t("Track outstanding principal, card spending and partial settlements by account.", "Pantau sisa pokok, belanja kartu kredit, dan pembayaran sebagian per akun.")}</p></div><div className="ledger-heading-actions"><button className="secondary-button" disabled={loading || !accounts.length} onClick={() => launch("lend")} type="button">＋ {t("Lend money", "Berikan pinjaman")}</button><button className="primary-button" disabled={loading || !accounts.length} onClick={() => launch("borrow")} type="button">＋ {t("Borrow money", "Terima pinjaman")}</button></div></div><LedgerStatus />
+    <div className="inline-notice">{t("Create a separate receivable or liability account for each person, loan, or credit card to track its balance individually.", "Buat akun piutang atau kewajiban tersendiri untuk setiap orang, pinjaman, atau kartu kredit agar saldonya terpantau terpisah.")} <Link href="/accounts">{t("Manage accounts", "Kelola akun")} ›</Link></div>
+    {loading ? <div className="page-skeleton" /> : <><section className="debt-grid">{balances.map(a => <article className="panel debt-card" key={a.id}><span className="eyebrow">{a.code} · {a.role === "receivable" ? t("RECEIVABLE", "PIUTANG") : t("LIABILITY", "KEWAJIBAN")}</span><h2>{a.name}</h2><div className="summary-value">{money.format(a.balance)}</div><p className="ledger-help">{a.balance === 0n ? t("Settled / no outstanding balance", "Lunas / tidak ada saldo tersisa") : a.balance < 0n ? t("Opposite-side balance: advance, overpayment, or a correction to review.", "Saldo pada sisi berlawanan: uang muka, kelebihan bayar, atau koreksi yang perlu diperiksa.") : a.role === "receivable" ? t("Still to be collected", "Masih harus diterima") : t("Still to be paid", "Masih harus dibayar")}</p><div className="ledger-heading-actions"><button className="secondary-button" onClick={() => launch(a.role === "receivable" ? "collect_receivable" : "repay_debt", a.id)} type="button">{a.role === "receivable" ? t("Record collection", "Catat penerimaan") : t("Record installment", "Catat pembayaran")}</button><button className="subtle-link" onClick={() => setSelected(a.id)} type="button">{t("History", "Riwayat")}</button></div></article>)}</section>
+      <p className="ledger-help">{t("An installment may pay only part of the principal. If it also includes interest or fees, split the liability debit and expense debit in a manual journal, with the total credited to your bank. This page does not calculate interest schedules.", "Cicilan dapat membayar sebagian pokok. Jika termasuk bunga atau biaya, pisahkan debit kewajiban dan debit beban dalam jurnal manual, lalu kreditkan totalnya ke bank. Halaman ini tidak menghitung jadwal bunga.")}</p>
+      {selected && <section className="panel ledger-panel"><div className="panel-heading"><h2>{t("Account history", "Riwayat akun")}: {accounts.find(a => a.id === selected)?.name}</h2></div><JournalList entries={history} /></section>}</>}
+    <JournalDialog open={open} initialKind={kind} initialAccount={selected} onClose={() => setOpen(false)} />
+  </div>;
+}

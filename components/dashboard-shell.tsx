@@ -11,6 +11,9 @@ import { usePreferences } from "@/lib/preferences";
 const navigation = [
   { href: "/", key: "overview", icon: "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z" },
   { href: "/transactions", key: "transactions", icon: "M7 7h13l-3-3 M20 7l-3 3 M17 17H4l3 3 M4 17l3-3" },
+  { href: "/accounts", key: "accounts", icon: "M4 5h16v15H4z M8 5v15 M4 10h16 M12 14h5 M12 17h5" },
+  { href: "/debts", key: "debts", icon: "M3 7h18v12H3z M3 11h18 M7 15h4 M7 4h10" },
+  { href: "/reports", key: "reports", icon: "M5 3h10l4 4v14H5z M8 16v-3 M12 16V9 M16 16v-5" },
   { href: "/settings", key: "settings", icon: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 2.9-.2-.1a1.7 1.7 0 0 0-1.8.2l-.2.1h-3.4l-.1-.2a1.7 1.7 0 0 0-1.5-1l-.2-.1-1.7-2.9.1-.2a1.7 1.7 0 0 0-.3-1.8l-.1-.2v-3.4l.2-.1a1.7 1.7 0 0 0 1-1.5l.1-.2 2.9-1.7.2.1a1.7 1.7 0 0 0 1.8-.3l.2-.1h3.4l.1.2a1.7 1.7 0 0 0 1.5 1l.2.1 1.7 2.9-.1.2a1.7 1.7 0 0 0 .3 1.8l.1.2v3.4z" },
 ];
 
@@ -33,7 +36,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
   const text = (en: string, id: string) => language === "en" ? en : id;
-  const pageName = pathname === "/transactions" ? text("Transactions", "Transaksi") : pathname === "/settings" ? text("Settings", "Pengaturan") : text("Overview", "Ringkasan");
+  const labels: Record<string, string> = { overview: text("Overview", "Ringkasan"), transactions: text("General journal", "Jurnal umum"), accounts: text("Accounts & ledger", "Akun & buku besar"), debts: text("Debts & receivables", "Utang & piutang"), reports: text("Reports", "Laporan"), settings: text("Settings", "Pengaturan") };
+  const pageName = labels[navigation.find(item => item.href === pathname)?.key ?? "overview"];
 
   useEffect(() => {
     const saved = window.localStorage.getItem("saku-sidebar-collapsed");
@@ -129,7 +133,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <div className="sidebar-label">{text("WORKSPACE", "RUANG KERJA")}</div>
         <nav aria-label={text("Main navigation", "Navigasi utama")} className="side-nav">
           {navigation.map((item) => {
-            const label = item.key === "overview" ? text("Overview", "Ringkasan") : item.key === "transactions" ? text("Transactions", "Transaksi") : text("Settings", "Pengaturan");
+            const label = labels[item.key];
             const current = pathname === item.href;
             return <Link aria-current={current ? "page" : undefined} className={`nav-link${current ? " active" : ""}`} href={item.href} key={item.href} onClick={() => setMobileOpen(false)} title={collapsed ? label : undefined}><Icon path={item.icon} size={18} /><span className="nav-text">{label}</span></Link>;
           })}

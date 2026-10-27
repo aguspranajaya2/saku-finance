@@ -29,8 +29,11 @@ Aplikasi juga menyediakan integrasi bot Telegram untuk mencatat transaksi melalu
 
 | Fitur | Yang tersedia |
 | --- | --- |
-| **Overview** | Ringkasan bulanan, arus kas 7 hari terakhir, kategori pengeluaran, dan transaksi terbaru. |
-| **Transaksi** | Tambah transaksi, cari catatan, serta filter berdasarkan jenis dan kategori. |
+| **Overview** | Pendapatan, beban, laba/rugi, kas, kewajiban, piutang, dan arus kas 7 hari dari jurnal yang sama. |
+| **Jurnal umum** | Pencatatan praktis atau jurnal manual 2–20 baris, filter tanggal/akun/jenis, serta jurnal pembalik. |
+| **Akun & buku besar** | Daftar akun aset, kewajiban, ekuitas, pendapatan, beban; saldo awal dan saldo berjalan per akun. |
+| **Utang & piutang** | Akun per orang/pinjaman/kartu, cicilan sebagian, penerimaan piutang, dan riwayat mutasi. |
+| **Laporan keuangan** | Laba rugi periode, neraca saldo, dan neraca per tanggal dengan pemeriksaan keseimbangan. |
 | **Akun pribadi** | Pendaftaran dengan email dan pemisahan data setiap pengguna. |
 | **Login username** | Masuk menggunakan username atau email dengan kata sandi yang sama. |
 | **Pengaturan** | Kelola username, preferensi tampilan, dan koneksi Telegram. |
@@ -76,7 +79,10 @@ pnpm build --webpack
 | Alamat | Halaman |
 | --- | --- |
 | `/` | Overview |
-| `/transactions` | Daftar transaksi |
+| `/transactions` | Jurnal umum dan riwayat koreksi |
+| `/accounts` | Daftar akun, saldo awal, dan buku besar |
+| `/debts` | Utang, kartu kredit, dan piutang |
+| `/reports` | Laba rugi, neraca saldo, dan neraca |
 | `/settings` | Pengaturan akun dan tampilan |
 | `/login` | Login dan pendaftaran |
 
@@ -93,10 +99,13 @@ Buat proyek di [Supabase Dashboard](https://supabase.com/dashboard). Setelah pro
 | 1 | [202610250001_initial_schema.sql](supabase/migrations/202610250001_initial_schema.sql) | Tabel transaksi, aturan akses per akun, dan tabel integrasi Telegram. |
 | 2 | [202610260001_usernames.sql](supabase/migrations/202610260001_usernames.sql) | Profil pengguna, username unik, dan fungsi login username. |
 | 3 | [202610260002_security_hardening.sql](supabase/migrations/202610260002_security_hardening.sql) | Izin kolom transaksi, pencabutan koneksi bot, otorisasi struk, batas permintaan bersama, dan slot OCR. |
+| 4 | [202610270001_double_entry_ledger.sql](supabase/migrations/202610270001_double_entry_ledger.sql) | Akun, jurnal berpasangan, saldo awal, pembalik/penutup, migrasi transaksi lama, dan perintah pembukuan Telegram. |
 
 Jalankan setiap migrasi satu kali. Untuk proyek yang sudah dikonfigurasi, terapkan migrasi yang belum dijalankan.
 
 > **Pembaruan dari versi lama:** jalankan migrasi keamanan nomor 3 **sebelum** deploy kode baru. Migrasi menambahkan fungsi yang dibutuhkan pembatasan login dan bot; layanan menolak memproses permintaan jika kontrol keamanan ini belum tersedia. Push Git tidak menjalankan migrasi Supabase secara otomatis.
+
+> **Pembaruan jurnal berpasangan:** jika migrasi 1–3 sudah dijalankan, cukup jalankan **migrasi 4 sebelum push/deploy versi pembukuan**. Migrasi 4 dijalankan satu kali dalam transaksi database, membuat akun awal untuk pengguna lama, dan membawa transaksi lama ke jurnal. Web versi baru membutuhkan tabel/fungsi ini. Push Git tidak menjalankan SQL.
 
 ### 2. Siapkan file konfigurasi
 
@@ -146,6 +155,55 @@ pnpm dev
 ```
 
 Buka [halaman login](http://localhost:3000/login), pilih **Create account**, lalu isi username, email, dan kata sandi. Jika konfirmasi email aktif, buka email konfirmasi sebelum masuk.
+
+## Pembukuan debit–kredit
+
+Saku menggunakan jurnal berpasangan dalam **IDR bulat**. Setiap jurnal mempunyai 2–20 baris, minimal dua akun berbeda, dan total debit sama dengan kredit. Posting disimpan secara atomik; tabel jurnal hanya dapat dibaca oleh pemiliknya. Penulisan dilakukan melalui fungsi yang mengambil identitas dari sesi pengguna. Saldo laporan dijumlahkan dengan `BigInt`, termasuk jika total banyak transaksi melampaui batas angka aman JavaScript.
+
+### Akun awal
+
+| Kode | Akun | Jenis / saldo normal |
+| --- | --- | --- |
+| `1000` | Kas | Aset / debit |
+| `1010` | Bank | Aset / debit |
+| `1100` | Piutang | Aset / debit |
+| `2000` | Utang | Kewajiban / kredit |
+| `2100` | Kartu kredit | Kewajiban / kredit |
+| `3000` | Modal awal | Ekuitas / kredit |
+| `4000` | Pendapatan | Pendapatan / kredit |
+| `5000` | Beban | Beban / debit |
+
+Buat akun sendiri di **Accounts & ledger / Akun & buku besar**. Misalnya `1110 Piutang Budi`, `2010 Utang Rina`, `1020 Bank BCA`, `4010 Gaji`, atau `5010 Administrasi`. Pilih rincian **Piutang** untuk peminjam, **Utang** untuk pemberi pinjaman, dan **Kartu kredit / paylater** untuk kartu agar saldo tampil pada halaman utang/piutang. Kode akun harus unik per pengguna.
+
+Saldo awal dapat diisi ketika membuat akun aset/kewajiban atau melalui tombol **Opening balance / Saldo awal** pada akun yang sudah ada. Masukkan saldo sebelum aktivitas pertamanya. Aplikasi membuat jurnal dengan lawan ekuitas; saldo awal tidak dihitung sebagai pendapatan, beban, atau arus kas periode. Saldo negatif diperbolehkan dan ditampilkan sebagai saldo pada sisi berlawanan.
+
+### Pencatatan praktis dan jurnal manual
+
+| Aktivitas | Debit | Kredit |
+| --- | --- | --- |
+| Pemasukan tunai | Kas / bank | Pendapatan |
+| Pengeluaran tunai atau kartu debit | Beban | Kas / bank |
+| Pembelian kartu kredit/paylater | Beban | Kartu kredit / kewajiban |
+| Terima pinjaman | Kas / bank | Utang |
+| Berikan pinjaman | Piutang | Kas / bank |
+| Bayar pokok/cicilan utang | Utang / kartu kredit | Kas / bank |
+| Terima pelunasan piutang | Kas / bank | Piutang |
+| Transfer rekening sendiri | Kas / bank tujuan | Kas / bank asal |
+| Setoran modal | Kas / bank | Ekuitas |
+| Penarikan modal/prive | Ekuitas | Kas / bank |
+
+Pilih **Record activity / Catat aktivitas** untuk pola di atas, atau **Manual journal / Jurnal manual** untuk penjualan kredit, tagihan belum dibayar, akrual, penyesuaian, serta pemecahan beberapa akun. Contoh cicilan dengan bunga: debit Utang 100.000, debit Beban bunga 20.000, dan kredit Bank 120.000. Cicilan sebagian mengurangi saldo pokok sesuai nominal yang dicatat. Bunga, jadwal jatuh tempo, kurs valuta asing, pajak, dan sinkronisasi bank tidak dihitung otomatis.
+
+Pembayaran pokok pinjaman, penerimaan kembali piutang, dan transfer rekening sendiri tidak menambah pendapatan/beban. Belanja kredit dicatat sebagai beban saat pembelian; pelunasan kartunya mengurangi utang. Pola pemisahan pembelian dan pembayaran kartu juga digunakan dalam [Actual Budget](https://actualbudget.org/docs/budgeting/credit-cards/).
+
+### Koreksi, penutup, dan laporan
+
+Jurnal yang sudah diposting tidak diedit atau dihapus melalui UI. Buka rincian jurnal lalu gunakan **Post reversal / Buat jurnal pembalik**, pilih tanggal pembalik, dan buat jurnal pengganti bila perlu. Riwayat asli tetap tersimpan; laporan per tanggal memperhitungkan tanggal efektif pembalik.
+
+Pada jurnal manual, pilih tujuan **Closing / Penutup** untuk memindahkan pendapatan/beban ke ekuitas/laba ditahan. Jurnal penutup hanya menerima akun pendapatan, beban, dan ekuitas. Laporan laba rugi mengecualikan jurnal penutup beserta pembaliknya; neraca saldo serta neraca tetap memperhitungkannya. Proses penutupan dilakukan manual, tanpa mengunci periode otomatis.
+
+Transaksi dari versi lama serta konfirmasi OCR tetap masuk melalui jalur kompatibilitas dan otomatis menjadi jurnal. Karena versi lama tidak menyimpan rekening pembayaran, transaksi tersebut memakai akun **Kas**. Gunakan pembalik dan jurnal pengganti untuk memindahkannya ke rekening yang benar. Pembaruan/penghapusan melalui jalur lama juga membuat pembalik pada tanggal transaksi aslinya. Struk OCR saat ini mengasumsikan pembayaran **Kas**; untuk bank/kredit pilih Batal dan catat dengan akun yang sesuai.
+
 
 ## Login dengan username
 
@@ -225,8 +283,23 @@ Gunakan **Disconnect Telegram** di Settings untuk mencabut koneksi bot. Pemutusa
 | --- | --- |
 | Catat pengeluaran | `/catat pengeluaran 25000 Makanan makan siang` |
 | Catat pemasukan | `/catat pemasukan 3000000 Gaji gaji bulanan` |
+| Terima pinjaman ke Kas | `/catat utang 1jt Pinjaman dari Rina` |
+| Berikan pinjaman dari Kas | `/catat piutang 300rb Pinjaman ke Budi` |
+| Bayar utang dari Kas | `/catat bayar_utang 100rb Cicilan bayar pokok` |
+| Terima piutang ke Kas | `/catat terima_piutang 50rb Pinjaman angsuran Budi` |
+| Belanja dengan Bank / kartu debit | `/catat kartu_debit 30ribu Makanan makan siang` |
+| Belanja dengan kartu kredit | `/catat kartu_kredit 200rb Belanja belanja bulanan` |
+| Bayar kartu dari Bank | `/catat bayar_kartu 100rb Cicilan bayar kartu` |
+| Transfer Kas ke Bank | `/catat transfer 100rb Transfer setor ke bank` |
+| Setoran / penarikan modal | `/catat modal 1jt Modal setoran` atau `/catat prive 100rb Modal penarikan` |
+| Jurnal dua akun pilihan sendiri | `/jurnal 1010 2010 1jt Pinjaman Rina masuk bank` |
+| Daftar akun / saldo utang / piutang | `/akun`, `/utang`, `/piutang` |
 | Lihat ringkasan | `/ringkasan` |
 | Baca struk | Kirim foto struk atau file gambar JPG/PNG/WebP (maks. 20 MB), lalu tinjau dan konfirmasi hasil bacanya. |
+
+`/jurnal` memakai urutan **kode debit, kode kredit, nominal, keterangan**. Gunakan kode akun milikmu dari `/akun`. Jurnal dengan lebih dari dua baris atau jurnal penutup dibuat melalui web. Ringkasan bot memakai jurnal yang sama dengan laporan web.
+
+Nominal menerima `30000`, `30.000`, `30,000`, `30rb`, `30ribu`, `30k`, dan `1,5jt`/`1.5jt`. Angka pecahan hanya digunakan dengan satuan sehingga hasilnya tetap rupiah bulat; format ambigu atau karakter asing ditolak, bukan dihapus dari nominal. Pesan percakapan bebas seperti `Buat SKCK 30ribu` masih membutuhkan format `/catat`.
 
 ### Cara kerja pembacaan struk
 

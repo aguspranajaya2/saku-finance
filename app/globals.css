@@ -1,5 +1,56 @@
 @import "tailwindcss";
 
+/* Accounting workspace */
+.ledger-page { display: grid; gap: 20px; }
+.ledger-page .page-heading { margin-bottom: 0; gap: 20px; }
+.ledger-heading-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.ledger-heading-actions button { white-space: normal; }
+.ledger-page .page-subtitle { max-width: 690px; line-height: 1.6; }
+.ledger-summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 15px; }
+.ledger-summary-grid .summary-card { min-width: 0; }
+.ledger-summary-grid .summary-value { font-size: clamp(19px,1.8vw,29px); overflow-wrap: anywhere; }
+.ledger-summary-grid p { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 0; }
+.ledger-summary-grid .balance-card p { color: #e4e0ff; }
+.ledger-position-strip { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); border: 1px solid var(--line); border-radius: 13px; background: var(--paper); }
+.ledger-position-strip > * { display: grid; padding: 19px 22px; gap: 9px; color: var(--ink); text-decoration: none; border-right: 1px solid var(--line); }
+.ledger-position-strip > :last-child { border-right: 0; }
+.ledger-position-strip span { font-size: 11px; color: var(--muted); }.ledger-position-strip strong { font-size: 20px; overflow-wrap: anywhere; }
+.ledger-panel { padding: 24px; min-width: 0; }.ledger-page .insight-grid { margin: 0; }
+.ledger-help { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 12px 0; overflow-wrap: anywhere; }
+.ledger-toolbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; margin-bottom: 20px; }
+.ledger-toolbar label, .ledger-date-control { display: grid; gap: 6px; color: var(--muted); font-size: 11px; flex: 1 1 140px; min-width: 0; }
+.ledger-toolbar input, .ledger-toolbar select, .ledger-date-control input { min-width: 0; max-width: 100%; width: 100%; min-height: 39px; padding: 9px; color: var(--ink); border: 1px solid var(--line); background: var(--paper); border-radius: 8px; font-size: 12px; }
+.ledger-date-control { flex: 0 1 170px; }
+.ledger-selection-summary { display: flex; gap: 15px; flex-wrap: wrap; justify-content: space-between; margin-bottom: 16px; color: var(--muted); font-size: 12px; }
+.journal-record { border-top: 1px solid var(--line); }
+.journal-record summary { cursor: pointer; display: grid; grid-template-columns: 88px minmax(0,1fr) auto; gap: 18px; align-items: center; padding: 18px 2px; list-style: none; }
+.journal-record summary::-webkit-details-marker { display: none; }
+.journal-record summary::after { content: none; }.journal-record summary:hover { background: var(--canvas); }
+.journal-date { color: var(--muted); font-size: 11px; }
+.journal-record-title, .journal-record-total { display: grid; gap: 7px; font-size: 13px; overflow-wrap: anywhere; }
+.journal-record-title span, .journal-record-total span { font-size: 10px; font-weight: 400; color: var(--muted); }.journal-record-total { text-align: right; }
+.ledger-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ledger-table { width: 100%; border-collapse: collapse; color: var(--ink); font-size: 12px; }
+.ledger-table th, .ledger-table td { text-align: left; padding: 13px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ledger-table th { font-size: 11px; color: var(--muted); font-weight: 650; }.ledger-table .number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ledger-table td:first-child { min-width: 190px; }.ledger-table td small { display: block; margin: 4px 0; color: var(--muted); font-size: 10px; }
+.journal-record-footer { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 12px; color: var(--muted); font-size: 10px; }
+.ledger-notice { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.transaction-modal.ledger-modal { width: min(820px,calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow-y: auto; }.ledger-modal .modal-top { margin-bottom: 20px; }
+.ledger-modal .transaction-form label { font-size: 12px; color: var(--ink); }.ledger-modal .transaction-form input, .ledger-modal .transaction-form select { color: var(--ink); background: var(--paper); border-color: var(--line); font-size: 13px; min-height: 42px; }
+.ledger-modal .kind-toggle { margin-bottom: 0; }.ledger-modal .kind-toggle button { font-size: 12px; }
+.journal-input-lines { display: grid; gap: 12px; }.journal-input-line { display: grid; grid-template-columns: minmax(170px,2fr) minmax(85px,1fr) minmax(85px,1fr) 34px; gap: 9px; align-items: end; }
+.journal-input-line .line-remove { padding: 0; height: 42px; }.journal-input-line .line-remove:disabled { opacity: .35; }
+.journal-balance { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; background: var(--canvas); border: 1px solid var(--line); border-radius: 9px; padding: 13px; font-size: 11px; line-height: 1.5; }
+.journal-balance span { display: grid; gap: 4px; }.journal-balance.is-balanced { border-color: #55a88c66; color: #31856e; }
+.ledger-account-link { border: 0; padding: 0; display: grid; gap: 5px; text-align: left; color: var(--ink); background: none; }.ledger-account-link span { color: var(--violet); font-size: 11px; }.selected-account { background: var(--canvas); }
+.debt-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }.debt-card { padding: 24px; min-width: 0; }.debt-card h2 { margin: 12px 0; font-size: 17px; overflow-wrap: anywhere; }.debt-card .summary-value { font-size: 25px; overflow-wrap: anywhere; }.debt-card .ledger-heading-actions { justify-content: flex-start; }
+.report-tabs { align-self: center; flex: 1 1 390px; }.report-tabs button { min-height: 38px; font-size: 12px; }
+.report-heading { display: flex; gap: 15px; justify-content: space-between; align-items: center; margin: 22px 0; }.report-heading h2 { font-size: 19px; margin: 0; }.report-heading span { color: var(--muted); font-size: 12px; }
+.report-subtotal { font-weight: 650; }.report-total { font-size: 14px; font-weight: 750; background: var(--canvas); }.report-table td:first-child { width: 65%; }.balance-sheet-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 24px; }
+@media (max-width: 1200px) { .ledger-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.debt-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.balance-sheet-grid { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 650px) { .ledger-page { gap: 15px; }.ledger-page .page-heading { align-items: stretch; }.ledger-heading-actions { justify-content: flex-start; width: 100%; }.ledger-heading-actions .primary-button,.ledger-heading-actions .secondary-button { flex: 1 1 150px; justify-content: center; }.ledger-panel { padding: 16px; }.ledger-position-strip { grid-template-columns: minmax(0,1fr); }.ledger-position-strip > * { padding: 14px 16px; border-right: 0; border-bottom: 1px solid var(--line); }.ledger-position-strip > :last-child { border-bottom: 0; }.ledger-position-strip strong { font-size: 19px; }.journal-record summary { grid-template-columns: minmax(0,1fr) auto; gap: 9px; }.journal-date { grid-column: 1 / -1; }.journal-record-total { font-size: 12px; }.journal-input-line { grid-template-columns: minmax(0,1fr) minmax(0,1fr) 32px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }.journal-input-line label:first-child { grid-column: 1 / -1; }.ledger-toolbar { gap: 10px; }.ledger-toolbar label { flex-basis: 130px; }.debt-grid { grid-template-columns: minmax(0,1fr); }.ledger-summary-grid { gap: 9px; }.ledger-summary-grid .summary-card { padding: 16px 13px; }.ledger-summary-grid .summary-value { font-size: 19px; }.ledger-summary-grid p { font-size: 10px; }.ledger-modal { padding: 18px; }.ledger-page .panel-heading { flex-wrap: wrap; gap: 12px; }.report-heading { align-items: flex-start; flex-direction: column; gap: 8px; } }
+
 :root {
   --ink: #222a3b;
   --muted: #8b91a0;

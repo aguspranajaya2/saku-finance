@@ -106,6 +106,8 @@ async function runWebhook(message, options = {}) {
       if (name === "finish_receipt_job") return { data: true, error: null };
       if (name === "confirm_pending_receipt") return { data: options.confirmStatus ?? "confirmed", error: null };
       if (name === "cancel_pending_receipt") return { data: options.cancelStatus ?? "cancelled", error: null };
+      if (name === "post_telegram_journal") return { data: { status: options.postStatus ?? "posted" }, error: options.postError ?? null };
+      if (name === "telegram_ledger_summary") return { data: { income: "8000000", expense: "500000", cash_in: "9000000", cash_out: "100000", accounts: [{ code: "2000", name: "Utang", account_type: "liability", role: "payable", balance: "750000" }] }, error: null };
       throw Error("Unexpected RPC " + name);
     },
     from(table) {
@@ -126,6 +128,8 @@ async function runWebhook(message, options = {}) {
       "next/server": { NextResponse },
       "@/lib/telegram-media": { ...isolatedMedia, normalizeReceiptImage: async image => image },
       "@/lib/security-limits": { consumeSecurityLimits: async () => ({ allowed: options.securityAllowed !== false, retryAfter: 60 }) },
+      "@/lib/money": loadTypeScript("lib/money.ts"),
+      "@/lib/telegram-journal": loadTypeScript("lib/telegram-journal.ts", { modules: { "@/lib/money": loadTypeScript("lib/money.ts") } }),
       "@/lib/supabase/admin": { createAdminClient: () => admin },
       "@/lib/receipts/ocr": { ReceiptOcrBusyError: class extends Error {}, recognizeReceipt: async () => { recognized++; return { merchant: "TEST SHOP", amount: 25000, date: "2026-10-26", confidence: 90 }; } },
     },
@@ -209,4 +213,32 @@ test("webhook gives unsupported documents a format hint and makes no receipt or 
   assert.equal(result.recognized, 0);
   assert.equal(result.writes.length, 0);
   assert.ok(result.sent[0].text.includes("Format file belum didukung"));
+});
+
+test("bot stores 30ribu as 30000 and rejects unknown amount suffixes before any posting", async () => {
+  const valid = await runWebhook({ text: "/catat pengeluaran 30ribu Administrasi Buat SKCK" });
+  assert.equal(valid.writes[0].data.amount, 30000);
+  const invalid = await runWebhook({ text: "/catat pengeluaran 30abc Administrasi Buat SKCK" });
+  assert.equal(invalid.writes.length, 0);
+  assert.ok(invalid.sent[0].text.includes("Nominal belum valid"));
+});
+test("debt and manual journal messages post through the current-chat RPC with explicit accounts", async () => {
+  for (const [text, debit, credit] of [["/catat utang 1jt Pinjaman Dari Budi", "1000", "2000"], ["/jurnal 1010 2010 1jt Pinjaman Budi", "1010", "2010"]]) {
+    const result = await runWebhook({ text });
+    const rpc = result.rpcCalls.find(call => call.name === "post_telegram_journal");
+    assert.equal(rpc.args.p_chat_id, 1); assert.equal(rpc.args.p_debit_code, debit); assert.equal(rpc.args.p_credit_code, credit); assert.equal(rpc.args.p_amount, 1000000);
+    assert.equal(result.writes.length, 0); assert.ok(result.sent[0].text.includes("Jurnal tersimpan"));
+  }
+});
+test("journal posting errors, unknown accounts, and revoked connections never acknowledge a save", async () => {
+  for (const options of [{ postError: { message: "migration unavailable" } }, { postStatus: "invalid_account" }, { postStatus: "unlinked" }, { postStatus: "conflict" }]) {
+    const result = await runWebhook({ text: "/catat piutang 30rb Pinjaman Budi" }, options);
+    assert.ok(!result.sent.some(reply => reply.text.includes("Jurnal tersimpan")));
+  }
+});
+test("monthly bot summary reads journal accounting instead of legacy income and expense rows", async () => {
+  const result = await runWebhook({ text: "/ringkasan" });
+  assert.ok(result.rpcCalls.some(call => call.name === "telegram_ledger_summary"));
+  assert.ok(result.sent[0].text.includes("Pendapatan:")); assert.ok(result.sent[0].text.includes("Kas masuk:"));
+  const accounts = await runWebhook({ text: "/utang" }); assert.ok(accounts.sent[0].text.includes("2000 Utang"));
 });

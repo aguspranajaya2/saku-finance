@@ -4,6 +4,8 @@ import { recognizeReceipt, ReceiptOcrBusyError } from "@/lib/receipts/ocr";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { downloadReceiptImage, normalizeReceiptImage, ReceiptImageError, selectReceiptImage, type TelegramDocument, type TelegramImageFile } from "@/lib/telegram-media";
 import { consumeSecurityLimits } from "@/lib/security-limits";
+import { exactRupiah } from "@/lib/money";
+import { parseTelegramJournal } from "@/lib/telegram-journal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -63,7 +65,7 @@ function receiptPreview(receipt: PendingReceipt) {
   const confidence = Math.round(Number(receipt.confidence));
   const dateNote = receipt.date_was_defaulted ? " (tanggal default hari ini)" : "";
   const confidenceNote = confidence < 55 ? "\nHasil OCR kurang jelas, periksa nominal dengan teliti." : "";
-  return `Periksa hasil baca struk:\nToko: ${receipt.merchant}\nTotal: ${amount}\nTanggal: ${date}${dateNote}\nAkurasi teks: ${confidence}%${confidenceNote}\n\nJika nominal perlu dikoreksi, tekan Batal lalu catat manual.`;
+  return `Periksa hasil baca struk:\nToko: ${receipt.merchant}\nTotal: ${amount}\nTanggal: ${date}${dateNote}\nAkurasi teks: ${confidence}%${confidenceNote}\n\nPembayaran: Kas (debit 5000, kredit 1000). Untuk bank/kartu kredit atau koreksi nominal, tekan Batal lalu gunakan /catat atau /jurnal.`;
 }
 
 function makassarDate() {
@@ -88,6 +90,18 @@ const helpText = [
   "Perintah Saku:",
   "/catat pengeluaran 25000 Makanan makan siang",
   "/catat pemasukan 3000000 Gaji gaji bulanan",
+  "/catat utang 1jt Pinjaman pinjam uang",
+  "/catat piutang 300rb Pinjaman pinjamkan uang",
+  "/catat bayar_utang 100rb Cicilan bayar pokok",
+  "/catat terima_piutang 50rb Pinjaman terima angsuran",
+  "/catat kartu_debit 30rb Makanan makan siang",
+  "/catat kartu_kredit 200rb Belanja belanja kartu",
+  "/catat bayar_kartu 100rb Cicilan bayar kartu dari Bank",
+  "/catat transfer 100rb Transfer Kas ke Bank",
+  "/catat modal 1jt Modal setoran modal",
+  "/catat prive 100rb Modal penarikan pribadi",
+  "/jurnal 1010 2000 1jt Pinjaman masuk Bank (kode debit, kredit, nominal, keterangan)",
+  "/akun — kode akun dan saldo; /utang; /piutang",
   "/ringkasan — ringkasan bulan ini",
   "/help — bantuan",
   "Kirim foto struk atau file gambar JPG/PNG/WebP (maks. 20 MB).",
@@ -331,44 +345,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  if (/^\/ringkasan(?:@\w+)?$/i.test(text)) {
+  if (/^\/(ringkasan|akun|utang|piutang)(?:@\w+)?$/i.test(text)) {
     const today = makassarDate();
     const range = monthRange(today);
-    const { data: rows, error } = await admin
-      .from("transactions")
-      .select("kind, amount")
-      .eq("user_id", connection.user_id)
-      .gte("transaction_date", range.start)
-      .lt("transaction_date", range.end);
-    if (error) {
+    const { data: books, error } = await admin.rpc("telegram_ledger_summary", { p_chat_id: message.chat.id, p_start_date: range.start, p_end_date: range.end });
+    if (error || !books || !Array.isArray(books.accounts)) {
       await sendMessage(token, message.chat.id, "Ringkasan belum bisa dibaca. Pastikan migrasi database sudah diterapkan.");
       return NextResponse.json({ ok: true });
     }
-    const totals = (rows ?? []).reduce((summary, row) => {
-      summary[row.kind as "income" | "expense"] += Number(row.amount);
-      return summary;
-    }, { income: 0, expense: 0 });
-    const format = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
-    await sendMessage(token, message.chat.id, `Ringkasan bulan ini\nPemasukan: ${format(totals.income)}\nPengeluaran: ${format(totals.expense)}\nArus bersih: ${format(totals.income - totals.expense)}`);
+    const format = (value: unknown) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(exactRupiah(value));
+    if (!/^\/ringkasan/i.test(text)) {
+      const accounts = books.accounts as Array<{ code: string; name: string; account_type: string; role: string; balance: string }>;
+      const filtered = accounts.filter(a => /^\/utang/i.test(text) ? a.account_type === "liability" : /^\/piutang/i.test(text) ? a.role === "receivable" : true);
+      await sendMessage(token, message.chat.id, `Akun dan saldo\n${filtered.slice(0, 20).map(a => `${a.code} ${a.name.slice(0, 50)}: ${format(a.balance)}`).join("\n")}\n\nLihat seluruh akun di web. Untuk pihak tertentu, buat akun terpisah lalu gunakan kodenya di /jurnal.`);
+    } else {
+      await sendMessage(token, message.chat.id, `Ringkasan bulan ini\nPendapatan: ${format(books.income)}\nBeban: ${format(books.expense)}\nLaba/rugi: ${format((exactRupiah(books.income) - exactRupiah(books.expense)).toString())}\nKas masuk: ${format(books.cash_in)}\nKas keluar: ${format(books.cash_out)}\n\nPokok utang/piutang, modal, dan transfer sendiri terpisah dari pendapatan/beban.`);
+    }
     return NextResponse.json({ ok: true });
   }
 
-  const command = text.match(/^\/catat(?:@\w+)?\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(.+))?$/i);
+  const command = parseTelegramJournal(text);
+  if (command === "invalid_amount" || command === "invalid_format") {
+    await sendMessage(token, message.chat.id, (command === "invalid_amount" ? "Nominal belum valid. Contoh: 30000, 30rb, 30ribu, atau 1,5jt.\n\n" : "Lengkapi jenis, nominal, kategori, dan keterangan.\n\n") + helpText);
+    return NextResponse.json({ ok: true });
+  }
   if (command) {
-    const typeText = command[1].toLowerCase();
-    const kind = ["masuk", "pemasukan", "income"].includes(typeText)
-      ? "income"
-      : ["keluar", "pengeluaran", "expense"].includes(typeText)
-        ? "expense"
-        : null;
-    const amount = Number(command[2].replace(/[^\d]/g, ""));
-    const category = command[3].replace(/_/g, " ").slice(0, 60);
-    const description = (command[4]?.trim() || category).slice(0, 240);
-
-    if (!kind || !Number.isSafeInteger(amount) || amount <= 0) {
-      await sendMessage(token, message.chat.id, "Format belum dikenali.\n\n" + helpText);
+    const { amount, category, memo: description } = command;
+    if (!command.legacy) {
+      const { data: result, error } = await admin.rpc("post_telegram_journal", {
+        p_chat_id: message.chat.id, p_update_id: update.update_id, p_entry_date: makassarDate(), p_memo: description,
+        p_entry_type: command.type, p_category: category, p_debit_code: command.debit, p_credit_code: command.credit, p_amount: amount,
+      });
+      const status = result?.status;
+      const reply = error ? "Jurnal belum tersimpan. Pastikan migrasi pembukuan sudah diterapkan, lalu coba lagi."
+        : status === "posted" ? `Jurnal tersimpan: Debit ${command.debit}, Kredit ${command.credit}, ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount)}.`
+        : status === "duplicate" ? "Pesan ini sudah pernah dicatat."
+        : status === "invalid_account" ? "Kode akun tidak tersedia. Gunakan /akun untuk melihat kode milikmu."
+        : status === "unlinked" ? "Koneksi Telegram sudah berubah. Hubungkan kembali melalui Saku."
+        : "Jurnal belum tersimpan karena benturan data. Coba kirim ulang.";
+      await sendMessage(token, message.chat.id, reply);
       return NextResponse.json({ ok: true });
     }
+    const kind = command.legacy;
 
     const { error } = await admin.from("transactions").insert({
       user_id: connection.user_id,
