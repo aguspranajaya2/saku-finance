@@ -1,6 +1,8 @@
+import { exactRupiah, parseRupiahAmount, type Rupiah } from "@/lib/money";
+
 export type ReceiptCandidate = {
   merchant: string;
-  amount: number | null;
+  amount: Rupiah | null;
   date: string | null;
   confidence: number;
 };
@@ -29,8 +31,10 @@ function parseDate(text: string) {
 }
 
 function amountsOnLine(line: string) {
-  const matches = [...line.matchAll(/(?:rp\.?\s*)?(\d{1,3}(?:[.,\s]\d{3})+|\d{4,})/gi)];
-  return matches.map((match) => Number(match[1].replace(/\D/g, ""))).filter((amount) => Number.isSafeInteger(amount) && amount > 0);
+  // Consume the entire numeric token, including malformed precision, so 12.3456
+  // cannot silently become 12 or 12345. Spatial groups on receipts are allowed.
+  const matches = [...line.matchAll(/(?:rp\.?\s*)?(\d+(?:[.,]\d+)*(?:\s\d{3}(?!\d))*(?:[.,]\d+)?)/gi)];
+  return matches.map(match => parseRupiahAmount(match[1].replace(/\s/g, ""))).filter((amount): amount is Rupiah => amount !== null);
 }
 
 export function parseReceipt(text: string, confidence: number): ReceiptCandidate {
@@ -48,7 +52,7 @@ export function parseReceipt(text: string, confidence: number): ReceiptCandidate
 
   return {
     merchant,
-    amount: amounts.length ? Math.max(...amounts) : null,
+    amount: amounts.length ? amounts.reduce((max, value) => exactRupiah(value) > exactRupiah(max) ? value : max) : null,
     date: parsedDate,
     confidence: Math.round(parsedConfidence),
   };

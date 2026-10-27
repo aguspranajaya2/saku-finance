@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PreferenceControls } from "@/components/preference-controls";
+import { AmountVisibilityToggle } from "@/components/amount-visibility-toggle";
 import { usePreferences } from "@/lib/preferences";
 import { createClient } from "@/lib/supabase/client";
 import { UsernameSettings } from "@/components/username-settings";
@@ -84,6 +85,7 @@ export default function SettingsPage() {
       <section className="settings-section">
         <div className="settings-section-heading"><span className="settings-section-icon">◐</span><div><h2>{text("Appearance", "Tampilan")}</h2><p>{text("Choose your language and color theme", "Pilih bahasa dan tema warna")}</p></div></div>
         <article className="panel settings-card appearance-settings-card">
+          <div className="setting-row"><div><strong>{text("Amount privacy", "Privasi nominal")}</strong><span>{text("Hide balances, journal amounts, reports and charts on this browser. Entry fields and Telegram messages remain visible.", "Sembunyikan saldo, nominal jurnal, laporan, dan grafik di browser ini. Kolom input dan pesan Telegram tetap terlihat.")}</span></div><AmountVisibilityToggle /></div>
           <div className="setting-row"><div><strong>{text("Language", "Bahasa")}</strong><span>{text("Choose the language used across Saku.", "Pilih bahasa yang digunakan di seluruh Saku.")}</span></div><PreferenceControls showTheme={false} /></div>
           <div className="setting-row"><div><strong>{text("Color theme", "Tema warna")}</strong><span>{theme === "dark" ? text("Dark theme is active.", "Tema gelap sedang digunakan.") : text("Light theme is active.", "Tema terang sedang digunakan.")}</span></div><PreferenceControls showLanguage={false} /></div>
         </article>

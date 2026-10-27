@@ -16,7 +16,7 @@ export async function readLedger(client: SupabaseClient, userId: string, isCurre
   }
   let accounts = await pages("ledger_accounts", "id,code,name,account_type,role,created_at");
   if (!accounts || !isCurrent()) return null;
-  const entries = await pages("journal_entries", "id,entry_date,memo,entry_type,category,source,created_at,reversal_of,reversed_by,journal_lines(account_id,debit,credit,line_no)");
+  const entries = await pages("journal_entries", "id,entry_date,memo,entry_type,category,source,created_at,reversal_of,reversed_by,journal_lines(account_id,debit:debit_exact,credit:credit_exact,line_no)");
   if (!entries || !isCurrent()) return null;
   const normalized = (entries as JournalEntry[]).map(normalizeEntry);
   if (normalized.some(e => !validateJournal(e.journal_lines))) throw new Error("Incomplete journal data.");

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLedger } from "@/components/ledger-provider";
 import { LedgerModal, LedgerStatus, useLedgerText } from "@/components/ledger-ui";
 import { entryTypeLabel, quickAccounts, quickKinds, todayDate, validateJournal, type EntryType, type JournalLine, type QuickKind } from "@/lib/ledger";
-import { parseRupiahAmount } from "@/lib/money";
+import { parseRupiahAmount, exactRupiah } from "@/lib/money";
 
 type InputLine = { key: string; account: string; debit: string; credit: string };
 export function JournalDialog({ open, onClose, initialKind = "expense", initialAccount }: { open: boolean; onClose: () => void; initialKind?: QuickKind | "journal"; initialAccount?: string }) {
@@ -34,9 +34,9 @@ export function JournalDialog({ open, onClose, initialKind = "expense", initialA
   const parsedAmount = parseRupiahAmount(amount);
   const journalLines: JournalLine[] = mode === "quick" ? [
     { account_id: debit, debit: parsedAmount ?? 0, credit: 0 }, { account_id: credit, debit: 0, credit: parsedAmount ?? 0 },
-  ] : lines.map(line => ({ account_id: line.account, debit: !line.debit.trim() || line.debit.trim() === "0" ? 0 : parseRupiahAmount(line.debit) ?? -1,
-    credit: !line.credit.trim() || line.credit.trim() === "0" ? 0 : parseRupiahAmount(line.credit) ?? -1 }));
-  const debitTotal = journalLines.reduce((s, l) => s + BigInt(Math.max(0, l.debit)), 0n), creditTotal = journalLines.reduce((s, l) => s + BigInt(Math.max(0, l.credit)), 0n);
+  ] : lines.map(line => ({ account_id: line.account, debit: !line.debit.trim() || /^0+(?:[.,]0{1,2})?$/.test(line.debit.trim()) ? 0 : parseRupiahAmount(line.debit) ?? -1,
+    credit: !line.credit.trim() || /^0+(?:[.,]0{1,2})?$/.test(line.credit.trim()) ? 0 : parseRupiahAmount(line.credit) ?? -1 }));
+  const debitTotal = journalLines.reduce((s, l) => s + (exactRupiah(l.debit) > 0n ? exactRupiah(l.debit) : 0n), 0n), creditTotal = journalLines.reduce((s, l) => s + (exactRupiah(l.credit) > 0n ? exactRupiah(l.credit) : 0n), 0n);
   const balanced = validateJournal(journalLines) && (mode !== "journal" || manualType !== "closing" || journalLines.every(l => accounts.some(a => a.id === l.account_id && ["equity", "revenue", "expense"].includes(a.account_type))));
   async function submit(event: FormEvent) {
     event.preventDefault(); if (saving) return;
@@ -51,7 +51,7 @@ export function JournalDialog({ open, onClose, initialKind = "expense", initialA
   return <LedgerModal title={t("Record a journal entry", "Catat jurnal")} onClose={onClose} busy={saving}><form className="transaction-form ledger-entry-form" onSubmit={submit}>
     <div className="kind-toggle" role="group" aria-label={t("Entry mode", "Mode pencatatan")}><button aria-pressed={mode === "quick"} className={mode === "quick" ? "active" : ""} onClick={() => setMode("quick")} type="button">{t("Guided entry", "Pencatatan praktis")}</button><button aria-pressed={mode === "journal"} className={mode === "journal" ? "active" : ""} onClick={() => setMode("journal")} type="button">{t("General journal", "Jurnal umum")}</button></div>
     {mode === "quick" && <><label>{t("Activity", "Aktivitas")}<select value={kind} onChange={e => chooseKind(e.target.value as QuickKind)}>{quickKinds.map(k => <option value={k} key={k}>{entryTypeLabel(k, language)}</option>)}</select></label>
-      <label>{t("Amount · IDR", "Nominal · IDR")}<input autoFocus required name="amount" inputMode="decimal" maxLength={64} placeholder="30000 / 30rb / 1,5jt" value={amount} onChange={e => setAmount(e.target.value)} /></label>
+      <label>{t("Amount · IDR", "Nominal · IDR")}<input autoFocus required name="amount" inputMode="decimal" maxLength={64} placeholder="3681341.75 / 30rb / 1,5jt" value={amount} onChange={e => setAmount(e.target.value)} /></label>
       <div className="form-row"><label>{t("Debit account", "Akun debit")}<select required value={debit} onChange={e => setDebit(e.target.value)}><option value="">{t("Choose account", "Pilih akun")}</option>{quickAccounts(kind, accounts, "debit").map(a => <option value={a.id} key={a.id}>{a.code} · {a.name}</option>)}</select></label>
       <label>{t("Credit account", "Akun kredit")}<select required value={credit} onChange={e => setCredit(e.target.value)}><option value="">{t("Choose account", "Pilih akun")}</option>{quickAccounts(kind, accounts, "credit").map(a => <option value={a.id} key={a.id}>{a.code} · {a.name}</option>)}</select></label></div>
       <p className="ledger-help">{kind === "expense" ? t("For debit/transfer choose a bank as the credit account. For credit/paylater choose a liability. Repay it later using Pay debt, so the expense is counted once.", "Untuk debit/transfer pilih bank sebagai akun kredit. Untuk kartu kredit/paylater pilih akun kewajiban. Pembayarannya dicatat lewat Bayar utang agar beban dihitung sekali.") : t("The selected accounts determine where the balance moves. Create a separate account for each lender, borrower, bank or card in Accounts.", "Akun menentukan perpindahan saldo. Buat akun terpisah untuk setiap pemberi pinjaman, peminjam, bank, atau kartu di halaman Akun.")}</p></>}

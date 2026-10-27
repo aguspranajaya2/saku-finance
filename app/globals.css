@@ -289,6 +289,9 @@ html[data-theme="dark"] .auth-field-heading a, html[data-theme="dark"] .auth-hel
 .language-select { height: 32px; min-width: 54px; padding: 0 8px; border: 1px solid #e8eaf0; border-radius: 8px; background: #fff; color: #626879; font-size: 10px; font-weight: 700; cursor: pointer; }
 .theme-toggle { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e8eaf0; border-radius: 8px; background: #fff; color: #626879; font-size: 17px; line-height: 1; }
 .theme-toggle:hover, .language-select:hover { border-color: #bcb5eb; color: #6759c9; }
+.amount-visibility-toggle { flex-shrink: 0; }
+.amount-visibility-toggle[aria-pressed="true"] { color: #7669d0; }
+.private-chart { display: grid; place-items: center; min-height: 150px; color: var(--muted, #8b91a1); font-size: 12px; }
 .auth-page { position: relative; }
 .auth-preferences { position: absolute; top: 16px; right: 18px; }
 .mobile-nav { display: none; }

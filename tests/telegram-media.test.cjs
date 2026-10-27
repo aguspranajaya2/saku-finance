@@ -242,3 +242,15 @@ test("monthly bot summary reads journal accounting instead of legacy income and 
   assert.ok(result.sent[0].text.includes("Pendapatan:")); assert.ok(result.sent[0].text.includes("Kas masuk:"));
   const accounts = await runWebhook({ text: "/utang" }); assert.ok(accounts.sent[0].text.includes("2000 Utang"));
 });
+
+test("salary command preserves 3681341.75 as exact decimal text through storage and confirmation", async () => {
+  const result = await runWebhook({ text: "/catat pemasukan 3681341.75 gaji gaji bulanan" });
+  assert.equal(result.writes[0].data.amount, "3681341.75");
+  assert.match(result.sent[0].text, /3\.681\.341,75/);
+  const rejected = await runWebhook({ text: "/catat pemasukan 3681341.751 gaji gaji bulanan" });
+  assert.equal(rejected.writes.length, 0);
+  assert.match(rejected.sent[0].text, /maksimal dua desimal/);
+  const journal = await runWebhook({ text: "/jurnal 1010 4000 3681341.75 Gaji bank" });
+  assert.equal(journal.rpcCalls.find(call => call.name === "post_telegram_journal").args.p_amount, "3681341.75");
+  assert.match(journal.sent[0].text, /3\.681\.341,75/);
+});

@@ -2,6 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=r
 module.exports=function mountProvider(file,exportName,modules,globals={}){
   const slots=[],effects=[],pending=[];let cursor=0;
   const hooks={createContext:()=>({Provider:'Provider'}),useContext(){throw Error('Not used')},
+    useMemo(fn){return fn()},
     useState(initial){const i=cursor++;if(!(i in slots))slots[i]=typeof initial==='function'?initial():initial;return[slots[i],v=>{slots[i]=typeof v==='function'?v(slots[i]):v}]},
     useRef(initial){const i=cursor++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
     useEffect(fn,deps){const i=cursor++,old=effects[i];if(!old||deps.some((d,p)=>d!==old.deps[p]))pending.push(()=>{old?.cleanup?.();effects[i]={deps,cleanup:fn()}})}

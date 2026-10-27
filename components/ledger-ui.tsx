@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { usePreferences } from "@/lib/preferences";
 import { useLedger } from "@/components/ledger-provider";
 import { entryTypeLabel, journalTotal, type JournalEntry } from "@/lib/ledger";
+import { formatRupiah, type Rupiah } from "@/lib/money";
 
 export function useLedgerText() {
-  const { language } = usePreferences();
-  const money = useMemo(() => new Intl.NumberFormat(language === "en" ? "en-US" : "id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }), [language]);
-  return { language, money, t: (en: string, id: string) => language === "en" ? en : id };
+  const { language, amountsHidden } = usePreferences();
+  const money = useMemo(() => ({ format: (value: Rupiah | bigint) => formatRupiah(value, language, amountsHidden) }), [language, amountsHidden]);
+  return { language, amountsHidden, money, t: (en: string, id: string) => language === "en" ? en : id };
 }
 export function LedgerStatus() {
   const { configured, error, refresh, loading } = useLedger();
@@ -17,7 +18,7 @@ export function LedgerStatus() {
     migration: t("Accounting setup is not ready. Ask the site owner to finish the database setup.", "Pembukuan belum siap. Minta pengelola menyelesaikan pengaturan database."),
     connection: t("Could not refresh your books. Check your connection, then refresh before retrying a saved entry.", "Buku belum dapat disegarkan. Periksa koneksi, lalu muat ulang sebelum mengulangi pencatatan."),
     save: t("Could not save. Check your connection and account access, then try again.", "Belum dapat menyimpan. Periksa koneksi dan akses akun, lalu coba lagi."),
-    invalid: t("Check the date, accounts, whole rupiah amounts, and balanced debit/credit totals.", "Periksa tanggal, akun, nominal rupiah bulat, dan keseimbangan debit/kredit."),
+    invalid: t("Check the date, accounts, amounts (up to two decimals), and balanced debit/credit totals.", "Periksa tanggal, akun, nominal (maksimal dua desimal), dan keseimbangan debit/kredit."),
     duplicate: t("This account code is already in use. Choose a different code.", "Kode akun sudah dipakai. Gunakan kode lain."),
   };
   return <>{!configured && <div className="demo-note"><span className="demo-dot" />{t("Preview books · changes reset on reload", "Buku pratinjau · perubahan direset saat dimuat ulang")}</div>}

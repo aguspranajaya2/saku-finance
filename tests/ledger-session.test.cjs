@@ -8,7 +8,7 @@ function harness(){
   const window=new EventTarget(),document=new EventTarget();document.visibilityState='visible';let user={id:'A'},callback,inside=false;const reads=[],writes=[];
   const client={auth:{getUser:async()=>{assert.equal(inside,false);return{data:{user},error:null}},onAuthStateChange(fn){callback=fn;return{data:{subscription:{unsubscribe(){callback=null}}}}}},rpc(name,args){const r={name,args,...deferred()};writes.push(r);return r.promise}};
   const router={replace(){}};
-  const app=mount('components/ledger-provider.tsx','LedgerProvider',{'next/navigation':{useRouter:()=>router},'@/lib/supabase/client':{createClient:()=>client},'@/lib/ledger':load('lib/ledger.ts'),
+  const app=mount('components/ledger-provider.tsx','LedgerProvider',{'@/lib/money':load('lib/money.ts'),'next/navigation':{useRouter:()=>router},'@/lib/supabase/client':{createClient:()=>client},'@/lib/ledger':load('lib/ledger.ts'),
     '@/lib/verified-session':load('lib/verified-session.ts',{globals:{window,document}}),'@/lib/ledger-client':{readLedger(client,owner,current){const r={owner,current,...deferred()};reads.push(r);return r.promise}}
   },{process:{env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.invalid',NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:'test'}}});
   return{...app,reads,writes,change(id){user=id?{id}:null;inside=true;try{callback(id?'SIGNED_IN':'SIGNED_OUT',user?{user}:null)}finally{inside=false}},focus(){window.dispatchEvent(new Event('focus'))}};
@@ -50,4 +50,17 @@ test('ledger loads refresh an account created mid-read and refuse incomplete acc
 });
 test('an empty posting result never acknowledges a journal as saved',async()=>{
   const app=harness();try{await tick();app.reads[0].resolve(books('A'));await tick();const saved=app.value().postJournal(journal('A'));await tick();app.writes[0].resolve({data:null,error:null});assert.equal(await saved,false);assert.equal(app.value().error,'migration');assert.equal(app.reads.length,1)}finally{app.dispose()}
+});
+
+test('decimal journal writes keep strings intact and exact ledger reads do not round JSON values',async()=>{
+  const app=harness();try{
+    await tick();app.reads[0].resolve(books('A'));await tick();
+    const entry=journal('A');entry.lines[0].debit='3681341.75';entry.lines[1].credit='3681341.75';
+    const pending=app.value().postJournal(entry);await tick();
+    assert.equal(app.writes[0].args.p_lines[0].debit,'3681341.75');
+    app.writes[0].resolve({data:'decimal-entry',error:null});await tick();app.reads[1].resolve(books('A'));assert.equal(await pending,true);
+  }finally{app.dispose()}
+  const {readLedger}=load('lib/ledger-client.ts');
+  const client={from(table){return{select(columns){if(table==='journal_entries')assert.match(columns,/debit:debit_exact,credit:credit_exact/);return this},eq(){return this},order(){return this},range(){return Promise.resolve({error:null,data:table==='ledger_accounts'?books('A').accounts:[{id:'decimal',journal_lines:[{account_id:'A-cash',debit:'9007199254740990.99',credit:'0'},{account_id:'A-revenue',debit:'0',credit:'9007199254740990.99'}]}]})}}}};
+  const result=await readLedger(client,'A',()=>true);assert.equal(result.entries[0].journal_lines[0].debit,'9007199254740990.99');assert.equal(result.entries[0].journal_lines[0].credit,0);
 });

@@ -4,7 +4,7 @@ import { recognizeReceipt, ReceiptOcrBusyError } from "@/lib/receipts/ocr";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { downloadReceiptImage, normalizeReceiptImage, ReceiptImageError, selectReceiptImage, type TelegramDocument, type TelegramImageFile } from "@/lib/telegram-media";
 import { consumeSecurityLimits } from "@/lib/security-limits";
-import { exactRupiah } from "@/lib/money";
+import { exactRupiah, formatRupiah, validRupiah } from "@/lib/money";
 import { parseTelegramJournal } from "@/lib/telegram-journal";
 
 export const runtime = "nodejs";
@@ -60,7 +60,7 @@ async function answerCallback(token: string, callbackId: string, text: string) {
 }
 
 function receiptPreview(receipt: PendingReceipt) {
-  const amount = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(receipt.amount));
+  const amount = formatRupiah(receipt.amount);
   const date = new Date(`${receipt.transaction_date}T12:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" });
   const confidence = Math.round(Number(receipt.confidence));
   const dateNote = receipt.date_was_defaulted ? " (tanggal default hari ini)" : "";
@@ -275,7 +275,7 @@ export async function POST(request: Request) {
       await sendMessage(token, message.chat.id, "Sedang membaca gambar struk…");
       const image = await normalizeReceiptImage(await downloadReceiptImage(token, receiptImage));
       const candidate = await recognizeReceipt(image);
-      if (!candidate.amount || !Number.isSafeInteger(candidate.amount)) {
+      if (!candidate.amount || !validRupiah(candidate.amount)) {
         await sendMessage(token, message.chat.id, "Total belum terbaca dengan yakin. Coba foto yang lebih jelas atau catat manual dengan /catat.");
         return NextResponse.json({ ok: true });
       }
@@ -295,11 +295,11 @@ export async function POST(request: Request) {
         date_was_defaulted: usedToday,
         confidence: candidate.confidence,
         expires_at: expiresAt,
-      }).select("id, merchant, amount, transaction_date, date_was_defaulted, confidence").single();
+      }).select("id, merchant, amount:amount_exact, transaction_date, date_was_defaulted, confidence").single();
 
       if (receiptError?.code === "23505") {
         const existing = await admin.from("pending_receipts")
-          .select("id, merchant, amount, transaction_date, date_was_defaulted, confidence")
+          .select("id, merchant, amount:amount_exact, transaction_date, date_was_defaulted, confidence")
           .eq("telegram_update_id", update.update_id)
           .eq("user_id", connection.user_id)
           .eq("chat_id", message.chat.id)
@@ -353,7 +353,7 @@ export async function POST(request: Request) {
       await sendMessage(token, message.chat.id, "Ringkasan belum bisa dibaca. Pastikan migrasi database sudah diterapkan.");
       return NextResponse.json({ ok: true });
     }
-    const format = (value: unknown) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(exactRupiah(value));
+    const format = (value: unknown) => formatRupiah(exactRupiah(value));
     if (!/^\/ringkasan/i.test(text)) {
       const accounts = books.accounts as Array<{ code: string; name: string; account_type: string; role: string; balance: string }>;
       const filtered = accounts.filter(a => /^\/utang/i.test(text) ? a.account_type === "liability" : /^\/piutang/i.test(text) ? a.role === "receivable" : true);
@@ -366,7 +366,7 @@ export async function POST(request: Request) {
 
   const command = parseTelegramJournal(text);
   if (command === "invalid_amount" || command === "invalid_format") {
-    await sendMessage(token, message.chat.id, (command === "invalid_amount" ? "Nominal belum valid. Contoh: 30000, 30rb, 30ribu, atau 1,5jt.\n\n" : "Lengkapi jenis, nominal, kategori, dan keterangan.\n\n") + helpText);
+    await sendMessage(token, message.chat.id, (command === "invalid_amount" ? "Nominal belum valid. Gunakan maksimal dua desimal. Contoh: 3681341.75, 3.681.341,75, 30rb, atau 1,5jt.\n\n" : "Lengkapi jenis, nominal, kategori, dan keterangan.\n\n") + helpText);
     return NextResponse.json({ ok: true });
   }
   if (command) {
@@ -378,7 +378,7 @@ export async function POST(request: Request) {
       });
       const status = result?.status;
       const reply = error ? "Jurnal belum tersimpan. Pastikan migrasi pembukuan sudah diterapkan, lalu coba lagi."
-        : status === "posted" ? `Jurnal tersimpan: Debit ${command.debit}, Kredit ${command.credit}, ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount)}.`
+        : status === "posted" ? `Jurnal tersimpan: Debit ${command.debit}, Kredit ${command.credit}, ${formatRupiah(amount)}.`
         : status === "duplicate" ? "Pesan ini sudah pernah dicatat."
         : status === "invalid_account" ? "Kode akun tidak tersedia. Gunakan /akun untuk melihat kode milikmu."
         : status === "unlinked" ? "Koneksi Telegram sudah berubah. Hubungkan kembali melalui Saku."
@@ -414,7 +414,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const amountText = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount);
+    const amountText = formatRupiah(amount);
     await sendMessage(token, message.chat.id, `Tersimpan: ${kind === "income" ? "pemasukan" : "pengeluaran"} ${amountText} · ${category}.`);
     return NextResponse.json({ ok: true });
   }

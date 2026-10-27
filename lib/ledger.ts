@@ -1,13 +1,15 @@
+import { exactRupiah, validRupiah, MAX_MINOR, minorToRupiah, type Rupiah } from "@/lib/money";
+
 export type Language = "en" | "id";
 export type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
 export type AccountRole = "general" | "cash" | "bank" | "receivable" | "payable" | "credit_card" | "opening_equity";
 export type EntryType = "income" | "expense" | "borrow" | "lend" | "repay_debt" | "collect_receivable" | "transfer" | "opening" | "journal" | "closing" | "reversal";
 export type QuickKind = Exclude<EntryType, "opening" | "journal" | "closing" | "reversal"> | "capital" | "withdrawal";
 export type LedgerAccount = { id: string; code: string; name: string; account_type: AccountType; role: AccountRole };
-export type JournalLine = { account_id: string; debit: number; credit: number; line_no?: number };
+export type JournalLine = { account_id: string; debit: Rupiah; credit: Rupiah; line_no?: number };
 export type JournalEntry = { id: string; entry_date: string; memo: string; entry_type: EntryType; category: string; source: string; created_at: string; reversal_of: string | null; reversed_by: string | null; journal_lines: JournalLine[] };
 export type NewJournal = { date: string; memo: string; type: EntryType; category: string; lines: JournalLine[]; requestId: string };
-export type NewAccount = { code: string; name: string; type: AccountType; role: AccountRole; openingBalance: number; openingDate: string };
+export type NewAccount = { code: string; name: string; type: AccountType; role: AccountRole; openingBalance: Rupiah; openingDate: string };
 export const accountTypes: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
 export const quickKinds: QuickKind[] = ["income", "expense", "borrow", "lend", "repay_debt", "collect_receivable", "transfer", "capital", "withdrawal"];
 const typeLabels: Record<string, [string, string]> = {
@@ -26,23 +28,24 @@ export function todayDate() {
   return ["year", "month", "day"].map(type => parts.find(p => p.type === type)?.value).join("-");
 }
 export function normalizeEntry(raw: JournalEntry): JournalEntry {
-  return { ...raw, journal_lines: raw.journal_lines.map(line => ({ ...line, debit: Number(line.debit), credit: Number(line.credit) })).sort((a, b) => (a.line_no ?? 0) - (b.line_no ?? 0)) };
+  return { ...raw, journal_lines: raw.journal_lines.map(line => ({ ...line, debit: minorToRupiah(exactRupiah(line.debit)), credit: minorToRupiah(exactRupiah(line.credit)) })).sort((a, b) => (a.line_no ?? 0) - (b.line_no ?? 0)) };
 }
 export function isCash(account: LedgerAccount) { return account.role === "cash" || account.role === "bank"; }
 export function debitNormal(type: AccountType) { return type === "asset" || type === "expense"; }
-export function journalTotal(entry: JournalEntry) { return entry.journal_lines.reduce((sum, line) => sum + BigInt(line.debit), 0n); }
+// All bigint totals/balances in this module are hundredths of one rupiah.
+export function journalTotal(entry: JournalEntry) { return entry.journal_lines.reduce((sum, line) => sum + exactRupiah(line.debit), 0n); }
 export function validateJournal(lines: JournalLine[]) {
   if (lines.length < 2 || lines.length > 20 || new Set(lines.map(l => l.account_id)).size < 2) return false;
-  if (lines.some(l => !l.account_id || !Number.isSafeInteger(l.debit) || !Number.isSafeInteger(l.credit)
-    || l.debit < 0 || l.credit < 0 || !((l.debit > 0 && l.credit === 0) || (l.credit > 0 && l.debit === 0)))) return false;
-  const debit = lines.reduce((s, l) => s + BigInt(l.debit), 0n);
-  return debit <= BigInt(Number.MAX_SAFE_INTEGER) && debit === lines.reduce((s, l) => s + BigInt(l.credit), 0n);
+  if (lines.some(l => !l.account_id || !validRupiah(l.debit) || !validRupiah(l.credit)
+    || exactRupiah(l.debit) < 0n || exactRupiah(l.credit) < 0n || !((exactRupiah(l.debit) > 0n && exactRupiah(l.credit) === 0n) || (exactRupiah(l.credit) > 0n && exactRupiah(l.debit) === 0n)))) return false;
+  const debit = lines.reduce((s, l) => s + exactRupiah(l.debit), 0n);
+  return debit <= MAX_MINOR && debit === lines.reduce((s, l) => s + exactRupiah(l.credit), 0n);
 }
 export function accountBalances(accounts: LedgerAccount[], entries: JournalEntry[], until?: string) {
   const movements = new Map<string, { debit: bigint; credit: bigint }>();
   for (const entry of entries) if (!until || entry.entry_date <= until) for (const line of entry.journal_lines) {
     const current = movements.get(line.account_id) ?? { debit: 0n, credit: 0n };
-    current.debit += BigInt(line.debit); current.credit += BigInt(line.credit); movements.set(line.account_id, current);
+    current.debit += exactRupiah(line.debit); current.credit += exactRupiah(line.credit); movements.set(line.account_id, current);
   }
   return accounts.map(account => {
     const { debit, credit } = movements.get(account.id) ?? { debit: 0n, credit: 0n };
@@ -54,7 +57,7 @@ export function entryEffects(accounts: LedgerAccount[], entry: JournalEntry) {
   const byId = new Map(accounts.map(a => [a.id, a]));
   return entry.journal_lines.reduce((result, line) => {
     const account = byId.get(line.account_id); if (!account) return result;
-    const movement = BigInt(line.debit) - BigInt(line.credit);
+    const movement = exactRupiah(line.debit) - exactRupiah(line.credit);
     if (account.account_type === "revenue") result.income -= movement;
     if (account.account_type === "expense") result.expense += movement;
     if (isCash(account)) result.cash += movement;
@@ -105,7 +108,7 @@ export function accountLedger(account: LedgerAccount, entries: JournalEntry[], u
     .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
     .map(entry => {
       const lines = entry.journal_lines.filter(l => l.account_id === account.id);
-      const debit = lines.reduce((s, l) => s + BigInt(l.debit), 0n), credit = lines.reduce((s, l) => s + BigInt(l.credit), 0n);
+      const debit = lines.reduce((s, l) => s + exactRupiah(l.debit), 0n), credit = lines.reduce((s, l) => s + exactRupiah(l.credit), 0n);
       running += debitNormal(account.account_type) ? debit - credit : credit - debit;
       return { entry, debit, credit, running };
     });

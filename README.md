@@ -100,12 +100,17 @@ Buat proyek di [Supabase Dashboard](https://supabase.com/dashboard). Setelah pro
 | 2 | [202610260001_usernames.sql](supabase/migrations/202610260001_usernames.sql) | Profil pengguna, username unik, dan fungsi login username. |
 | 3 | [202610260002_security_hardening.sql](supabase/migrations/202610260002_security_hardening.sql) | Izin kolom transaksi, pencabutan koneksi bot, otorisasi struk, batas permintaan bersama, dan slot OCR. |
 | 4 | [202610270001_double_entry_ledger.sql](supabase/migrations/202610270001_double_entry_ledger.sql) | Akun, jurnal berpasangan, saldo awal, pembalik/penutup, migrasi transaksi lama, dan perintah pembukuan Telegram. |
+| 5 | [202610270002_decimal_amounts.sql](supabase/migrations/202610270002_decimal_amounts.sql) | Nominal dengan dua desimal secara tepat pada jurnal, saldo awal, Telegram, dan struk. Nilai lama tetap dalam rupiah. |
 
 Jalankan setiap migrasi satu kali. Untuk proyek yang sudah dikonfigurasi, terapkan migrasi yang belum dijalankan.
 
 > **Pembaruan dari versi lama:** jalankan migrasi keamanan nomor 3 **sebelum** deploy kode baru. Migrasi menambahkan fungsi yang dibutuhkan pembatasan login dan bot; layanan menolak memproses permintaan jika kontrol keamanan ini belum tersedia. Push Git tidak menjalankan migrasi Supabase secara otomatis.
 
 > **Pembaruan jurnal berpasangan:** jika migrasi 1–3 sudah dijalankan, cukup jalankan **migrasi 4 sebelum push/deploy versi pembukuan**. Migrasi 4 dijalankan satu kali dalam transaksi database, membuat akun awal untuk pengguna lama, dan membawa transaksi lama ke jurnal. Web versi baru membutuhkan tabel/fungsi ini. Push Git tidak menjalankan SQL.
+
+> **Pembaruan dua desimal:** jika migrasi 1–4 sudah dijalankan, cukup jalankan **migrasi 5 satu kali sebelum push/deploy pembaruan desimal**. Kolom nominal berubah menjadi `numeric` dengan pemeriksaan maksimal dua desimal, tanpa pembulatan. Transaksi Rp30.000 tetap Rp30.000. Hak akses per pengguna dan pemeriksaan keseimbangan jurnal tetap berlaku. Nominal dikirim sebagai teks desimal dan dihitung dengan integer seperseratus rupiah agar pecahan tidak hilang.
+
+Tombol **mata** di bilah atas menyembunyikan saldo, nominal jurnal, buku besar, utang/piutang, dan laporan. Grafik beserta tooltip nominal ikut disembunyikan. Pilihan tersimpan di browser dan berlaku antarhalaman; pada kunjungan pertama nominal tersembunyi. Nominal yang sedang diketik dalam formulir dan pesan Telegram tetap terlihat. Ini adalah privasi tampilan, bukan pengganti login atau pengaturan akses data.
 
 ### 2. Siapkan file konfigurasi
 
@@ -299,7 +304,7 @@ Gunakan **Disconnect Telegram** di Settings untuk mencabut koneksi bot. Pemutusa
 
 `/jurnal` memakai urutan **kode debit, kode kredit, nominal, keterangan**. Gunakan kode akun milikmu dari `/akun`. Jurnal dengan lebih dari dua baris atau jurnal penutup dibuat melalui web. Ringkasan bot memakai jurnal yang sama dengan laporan web.
 
-Nominal menerima `30000`, `30.000`, `30,000`, `30rb`, `30ribu`, `30k`, dan `1,5jt`/`1.5jt`. Angka pecahan hanya digunakan dengan satuan sehingga hasilnya tetap rupiah bulat; format ambigu atau karakter asing ditolak, bukan dihapus dari nominal. Pesan percakapan bebas seperti `Buat SKCK 30ribu` masih membutuhkan format `/catat`.
+Nominal menerima `30000`, `30.000`, `30,000`, `30rb`, `30ribu`, `30k`, dan `1,5jt`/`1.5jt`. Maksimal dua desimal dapat ditulis sebagai `3681341.75`, `3681341,75`, `3.681.341,75`, atau `3,681,341.75`. Angka seperti `1.234` tetap berarti 1234 (pemisah ribuan). Lebih dari dua desimal dan karakter asing ditolak tanpa membulatkan nominal. Contoh: `/catat pemasukan 3681341.75 Gaji gaji bulanan`. Pesan percakapan bebas seperti `Buat SKCK 30ribu` masih membutuhkan format `/catat`.
 
 ### Cara kerja pembacaan struk
 

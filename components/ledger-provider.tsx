@@ -1,4 +1,5 @@
 "use client";
+import { exactRupiah, minorToRupiah, validRupiah, type Rupiah } from "@/lib/money";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -14,7 +15,7 @@ type LedgerContextValue = {
   postJournal: (entry: NewJournal) => Promise<boolean>;
   createAccount: (account: NewAccount) => Promise<boolean>;
   reverseEntry: (id: string, date: string) => Promise<boolean>;
-  recordOpening: (account: LedgerAccount, amount: number, date: string) => Promise<boolean>;
+  recordOpening: (account: LedgerAccount, amount: Rupiah, date: string) => Promise<boolean>;
 };
 const LedgerContext = createContext<LedgerContextValue | null>(null);
 const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
@@ -88,15 +89,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     });
   }
   async function createAccount(account: NewAccount) {
+    if (!validRupiah(account.openingBalance)) { setError("invalid"); return false; }
     if (accounts.some(a => a.code === account.code)) { setError("duplicate"); return false; }
     return mutate("create_ledger_account", { p_code: account.code, p_name: account.name, p_account_type: account.type, p_role: account.role,
       p_opening_balance: account.openingBalance, p_opening_date: account.openingDate }, () => {
       const id = crypto.randomUUID();
       setAccounts(previous => [...previous, { id, code: account.code, name: account.name, account_type: account.type, role: account.role }].sort((a, b) => a.code.localeCompare(b.code)));
-      if (account.openingBalance) {
+      if (exactRupiah(account.openingBalance) !== 0n) {
         const equity = accounts.find(a => a.role === "opening_equity")!;
-        const positiveAsset = (account.type === "asset") === (account.openingBalance > 0);
-        const amount = Math.abs(account.openingBalance);
+        const positiveAsset = (account.type === "asset") === (exactRupiah(account.openingBalance) > 0n);
+        const amount = minorToRupiah(exactRupiah(account.openingBalance) < 0n ? -exactRupiah(account.openingBalance) : exactRupiah(account.openingBalance));
         setEntries(previous => [...previous, { id: crypto.randomUUID(), entry_date: account.openingDate, memo: `Opening balance: ${account.name}`, entry_type: "opening", category: "Saldo awal", source: "web",
           created_at: new Date().toISOString(), reversal_of: null, reversed_by: null, journal_lines: [
             { account_id: positiveAsset ? id : equity.id, debit: amount, credit: 0 }, { account_id: positiveAsset ? equity.id : id, debit: 0, credit: amount },
@@ -114,15 +116,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         journal_lines: entry.journal_lines.map(line => ({ ...line, debit: line.credit, credit: line.debit })) }]);
     });
   }
-  async function recordOpening(account: LedgerAccount, amount: number, date: string) {
+  async function recordOpening(account: LedgerAccount, amount: Rupiah, date: string) {
     const prior = entries.find(e => e.entry_type === "opening" && !e.reversed_by && e.journal_lines.some(l => l.account_id === account.id));
-    if (!Number.isSafeInteger(amount) || !amount || prior || entries.some(e => e.entry_date < date && e.journal_lines.some(l => l.account_id === account.id))) { setError("invalid"); return false; }
+    if (!validRupiah(amount) || exactRupiah(amount) === 0n || prior || entries.some(e => e.entry_date < date && e.journal_lines.some(l => l.account_id === account.id))) { setError("invalid"); return false; }
     return mutate("record_opening_balance", { p_account_id: account.id, p_amount: amount, p_entry_date: date }, () => {
       const equity = accounts.find(a => a.role === "opening_equity")!;
-      const positiveAsset = (account.account_type === "asset") === (amount > 0);
+      const positiveAsset = (account.account_type === "asset") === (exactRupiah(amount) > 0n);
       setEntries(previous => [...previous, { id: crypto.randomUUID(), entry_date: date, memo: `Opening balance: ${account.name}`, entry_type: "opening", category: "Saldo awal", source: "web",
         created_at: new Date().toISOString(), reversal_of: null, reversed_by: null, journal_lines: [
-          { account_id: positiveAsset ? account.id : equity.id, debit: Math.abs(amount), credit: 0 }, { account_id: positiveAsset ? equity.id : account.id, debit: 0, credit: Math.abs(amount) },
+          { account_id: positiveAsset ? account.id : equity.id, debit: minorToRupiah(exactRupiah(amount) < 0n ? -exactRupiah(amount) : exactRupiah(amount)), credit: 0 }, { account_id: positiveAsset ? equity.id : account.id, debit: 0, credit: minorToRupiah(exactRupiah(amount) < 0n ? -exactRupiah(amount) : exactRupiah(amount)) },
         ] }]);
     });
   }

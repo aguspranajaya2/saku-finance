@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PreferenceControls } from "@/components/preference-controls";
+import { AmountVisibilityToggle } from "@/components/amount-visibility-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { watchVerifiedSession } from "@/lib/verified-session";
 import { usePreferences } from "@/lib/preferences";
@@ -150,7 +151,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <button aria-controls="workspace-sidebar" aria-expanded={mobileOpen} aria-label={mobileOpen ? text("Close navigation", "Tutup navigasi") : text("Open navigation", "Buka navigasi")} className="mobile-menu-button" onClick={() => setMobileOpen((open) => !open)} type="button"><span>☰</span></button>
           <div className="breadcrumb"><span>{text("Finance", "Keuangan")}</span><span className="breadcrumb-chevron">›</span><strong>{pageName}</strong></div>
-          <div className="topbar-right"><span className="today-label">{new Date().toLocaleDateString(language === "en" ? "en-US" : "id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" })}</span><PreferenceControls />{!configured && <Link className="sign-in-link" href="/login">{text("Sign in", "Masuk")}</Link>}</div>
+          <div className="topbar-right"><span className="today-label">{new Date().toLocaleDateString(language === "en" ? "en-US" : "id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" })}</span><AmountVisibilityToggle /><PreferenceControls />{!configured && <Link className="sign-in-link" href="/login">{text("Sign in", "Masuk")}</Link>}</div>
         </header>
         {signOutError && <div className="inline-notice" role="alert">{text("Could not sign out. Check your connection and try again.", "Belum bisa keluar. Periksa koneksi lalu coba lagi.")}</div>}
         {children}

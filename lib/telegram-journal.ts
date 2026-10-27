@@ -1,4 +1,4 @@
-import { parseRupiahAmount } from "@/lib/money";
+import { parseRupiahAmount, type Rupiah } from "@/lib/money";
 import type { EntryType } from "@/lib/ledger";
 
 const aliases: Record<string, { type: EntryType; debit: string; credit: string; legacy?: "income" | "expense" }> = {
@@ -11,7 +11,7 @@ const aliases: Record<string, { type: EntryType; debit: string; credit: string; 
   modal: { type: "journal", debit: "1000", credit: "3000" }, prive: { type: "journal", debit: "3000", credit: "1000" },
 };
 const synonyms: Record<string, string> = { masuk: "pemasukan", income: "pemasukan", keluar: "pengeluaran", expense: "pengeluaran", hutang: "utang", borrow: "utang", lend: "piutang", cicilan: "bayar_utang", bayar_hutang: "bayar_utang", repay_debt: "bayar_utang", collect_receivable: "terima_piutang", paylater: "kartu_kredit" };
-export type TelegramJournalCommand = { type: EntryType; debit: string; credit: string; amount: number; category: string; memo: string; legacy?: "income" | "expense" };
+export type TelegramJournalCommand = { type: EntryType; debit: string; credit: string; amount: Rupiah; category: string; memo: string; legacy?: "income" | "expense" };
 export function parseTelegramJournal(text: string): TelegramJournalCommand | "invalid_amount" | "invalid_format" | null {
   if (/^\/jurnal(?:@\w+)?(?:\s|$)/i.test(text)) {
     const match = text.match(/^\/jurnal(?:@\w+)?\s+(\d{3,12})\s+(\d{3,12})\s+(\S+)(?:\s+(ribu|rb|k|juta|jt|miliar|milyar))?\s+(.+)$/i);

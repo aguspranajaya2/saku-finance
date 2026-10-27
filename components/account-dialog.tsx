@@ -3,20 +3,20 @@ import { useState, type FormEvent } from "react";
 import { useLedger } from "@/components/ledger-provider";
 import { LedgerModal, LedgerStatus, useLedgerText } from "@/components/ledger-ui";
 import { accountTypeLabel, accountTypes, todayDate, type AccountRole, type AccountType, type JournalEntry, type LedgerAccount } from "@/lib/ledger";
-import { parseRupiahAmount } from "@/lib/money";
+import { parseRupiahAmount, exactRupiah, minorToRupiah } from "@/lib/money";
 
 const roles: Record<AccountType, Array<[AccountRole, string, string]>> = {
   asset: [["general", "Other asset", "Aset lain"], ["cash", "Cash", "Kas"], ["bank", "Bank / e-wallet", "Bank / dompet digital"], ["receivable", "Receivable / borrower", "Piutang / peminjam"]],
   liability: [["payable", "Payable / lender", "Utang / pemberi pinjaman"], ["credit_card", "Credit card / paylater", "Kartu kredit / paylater"], ["general", "Other liability", "Kewajiban lain"]],
   equity: [["general", "Equity / retained earnings / drawings", "Modal / laba ditahan / prive"]], revenue: [["general", "Revenue", "Pendapatan"]], expense: [["general", "Expense", "Beban"]],
 };
-function openingAmount(value: string) { if (!value.trim() || value.trim() === "0") return 0; const negative = value.trim().startsWith("-"); const amount = parseRupiahAmount(negative ? value.trim().slice(1) : value); return amount === null ? null : negative ? -amount : amount; }
+function openingAmount(value: string) { if (!value.trim() || /^-?0+(?:[.,]0{1,2})?$/.test(value.trim())) return 0; const negative = value.trim().startsWith("-"); const amount = parseRupiahAmount(negative ? value.trim().slice(1) : value); return amount === null ? null : negative ? minorToRupiah(-exactRupiah(amount)) : amount; }
 export function AccountDialog({ onClose }: { onClose: () => void }) {
   const { createAccount, saving } = useLedger(); const { t, language } = useLedgerText();
   const [type, setType] = useState<AccountType>("asset"), [role, setRole] = useState<AccountRole>("bank"), [validation, setValidation] = useState("");
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); const data = new FormData(e.currentTarget); const amount = openingAmount(String(data.get("opening") ?? ""));
-    if (amount === null) { setValidation(t("Use a whole rupiah opening balance.", "Isi saldo awal dalam rupiah bulat.")); return; }
+    if (amount === null) { setValidation(t("Use an opening balance with up to two decimals.", "Isi saldo awal dengan maksimal dua desimal.")); return; }
     if (await createAccount({ code: String(data.get("code")).trim(), name: String(data.get("name")).trim(), type, role,
       openingBalance: type === "asset" || type === "liability" ? amount : 0, openingDate: String(data.get("date") ?? todayDate()) })) onClose();
   }
@@ -35,7 +35,7 @@ export function OpeningDialog({ account, onClose }: { account: LedgerAccount; on
   const first = entries.filter(e => e.journal_lines.some(l => l.account_id === account.id)).map(e => e.entry_date).sort()[0] ?? todayDate();
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); const data = new FormData(e.currentTarget); const amount = openingAmount(String(data.get("amount")));
-    if (!amount) { setValidation(t("Enter a non-zero whole rupiah amount.", "Isi nominal rupiah bulat selain nol.")); return; }
+    if (!amount) { setValidation(t("Enter a non-zero amount with up to two decimals.", "Isi nominal selain nol, maksimal dua desimal.")); return; }
     if (await recordOpening(account, amount, String(data.get("date")))) onClose();
   }
   return <LedgerModal title={t("Record opening balance", "Catat saldo awal")} onClose={onClose} busy={saving}><form className="transaction-form" onSubmit={submit}>
