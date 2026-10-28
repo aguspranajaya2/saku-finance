@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PreferenceControls } from "@/components/preference-controls";
+import { PasswordInput } from "@/components/password-input";
 import { usePreferences } from "@/lib/preferences";
 import { isValidUsername, normalizeUsername } from "@/lib/username";
 import { signInError } from "@/lib/auth-errors";
@@ -132,7 +133,7 @@ export default function LoginPage() {
                 <label>{text("Username", "Username")}<input aria-describedby="username-hint" autoCapitalize="none" autoComplete="username" autoCorrect="off" maxLength={30} minLength={3} name="username" pattern="[A-Za-z0-9_]{3,30}" placeholder={text("your_username", "username_kamu")} required spellCheck={false} type="text" /><span className="field-hint" id="username-hint">{text("3–30 letters, numbers, or underscores. Case-insensitive.", "3–30 huruf, angka, atau underscore. Huruf besar/kecil dianggap sama.")}</span></label>
                 <label>{text("Email", "Email")}<input autoComplete="email" name="email" placeholder="name@email.com" required type="email" /></label>
               </>}
-              <div className="auth-password-field"><div className="auth-field-heading"><label htmlFor="auth-password">{text("Password", "Kata sandi")}</label>{mode === "login" && <Link href="/account-recovery">{text("Forgot password?", "Lupa kata sandi?")}</Link>}</div><input autoComplete={mode === "login" ? "current-password" : "new-password"} id="auth-password" minLength={8} name="password" placeholder={text("At least 8 characters", "Minimal 8 karakter")} required type="password" /></div>
+              <div className="auth-password-field"><div className="auth-field-heading"><label htmlFor="auth-password">{text("Password", "Kata sandi")}</label>{mode === "login" && <Link href="/account-recovery">{text("Forgot password?", "Lupa kata sandi?")}</Link>}</div><PasswordInput autoComplete={mode === "login" ? "current-password" : "new-password"} id="auth-password" minLength={8} name="password" placeholder={text("At least 8 characters", "Minimal 8 karakter")} required /></div>
               {error && <p className="auth-feedback error-feedback" role="alert">{error}</p>}
               {message && <p className="auth-feedback success-feedback" role="status">{message}</p>}
               <button className="primary-button auth-submit" disabled={busy} type="submit">{busy ? text("Working…", "Memproses…") : mode === "login" ? text("Sign in to Saku", "Masuk ke Saku") : text("Create account", "Buat akun")}</button>

@@ -264,6 +264,11 @@ h1 { margin: 8px 0 7px; font-size: clamp(24px, 2.5vw, 30px); letter-spacing: -1.
 .auth-footer { margin: 17px 0 0; color: #a0a4af; font-size: 9px; }
 .auth-field-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .auth-password-field { display: grid; gap: 7px; }
+.password-input-wrap { position: relative; min-width: 0; }
+.auth-form .password-input-wrap input { padding-right: 48px; }
+.password-visibility-toggle { position: absolute; inset: 1px 3px 1px auto; display: grid; place-items: center; width: 40px; border: 0; border-radius: 6px; background: transparent; color: #777f90; cursor: pointer; }
+.password-visibility-toggle:hover { color: #8174dc; }
+.password-visibility-toggle:focus-visible { outline: 2px solid #9b90e4; outline-offset: -2px; }
 .auth-field-heading a, .auth-help-links a, .auth-back-link, .auth-text-button { color: #7062cf; font-size: 10px; font-weight: 600; text-decoration: none; }
 .auth-help-links { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; color: var(--muted); }
 .auth-back-link { display: block; width: fit-content; margin: 24px auto 0; }
