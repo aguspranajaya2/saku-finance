@@ -676,3 +676,42 @@ html[data-theme="dark"] .page-skeleton { background: linear-gradient(100deg, #1c
 @media (max-width: 380px) {
   .breadcrumb > span:first-child, .breadcrumb-chevron { display: none; }
 }
+
+/* Workspace shell: quieter surfaces and thumb-sized controls. */
+.app-shell { --muted: #626773; }
+html[data-theme="dark"] .app-shell { --muted: #b0b2bd; }
+.app-shell .brand-mark { box-shadow: none; }
+.app-shell .avatar { background: var(--violet); }
+.app-shell .sidebar-tip { display: none; }
+.app-shell .sidebar-spacer { min-height: 24px; }
+.app-shell .sidebar-label { font-size: 11px; letter-spacing: 0; color: var(--muted); font-weight: 500; }
+.app-shell .nav-link { font-size: 13px; color: var(--muted); }
+.app-shell .nav-link.active { background: var(--canvas); color: var(--ink); }
+.app-shell .profile-copy span, .app-shell .today-label { font-size: 11px; color: var(--muted); }
+.app-shell .profile-copy strong { font-size: 12px; }
+.app-shell .profile-signout { font-size: 11px; }
+.app-shell .topbar { padding-inline: 32px; }
+.app-shell .breadcrumb { min-width: 0; color: var(--muted); font-size: 12px; }
+.app-shell .breadcrumb strong { min-width: 0; color: var(--ink); }
+.app-shell .sign-in-link { font-size: 12px; }
+.app-shell .theme-toggle, .app-shell .language-select { height: 36px; min-width: 36px; }
+.app-shell .sidebar-toggle { font-size: 18px; }
+@media (max-width:790px) {
+  .app-shell .topbar { height: 64px; padding-inline: 16px; gap: 10px; }
+  .app-shell .mobile-menu-button { width: 44px; height: 44px; }
+  .app-shell .breadcrumb { flex: 1; margin-left: 0; overflow: hidden; }
+  .app-shell .breadcrumb > span { display: none; }
+  .app-shell .breadcrumb strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-shell .topbar-right { flex: none; gap: 8px; }
+  .app-shell .theme-toggle { width: 44px; height: 44px; }
+  .app-shell .language-select { height: 44px; font-size: 12px; }
+  .app-shell .side-nav .nav-link { min-height: 44px; }
+  .app-shell .sidebar-mobile-close { width: 44px; height: 44px; }
+  .app-shell .profile-signout { min-height: 44px; }
+}
+@media (max-width:359px) {
+  .app-shell .topbar { gap: 6px; }
+  .app-shell .topbar-right { gap: 4px; }
+  .app-shell .preference-controls { gap: 4px; }
+  .app-shell .sign-in-link { display: none; }
+}

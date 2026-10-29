@@ -1,5 +1,6 @@
 node_modules/
 .tools/
+.playwright-cli/
 .next/
 out/
 build/

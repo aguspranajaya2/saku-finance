@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import styles from "./ledger-overview.module.css";
 import Link from "next/link";
 import { useLedger } from "@/components/ledger-provider";
 import { JournalDialog } from "@/components/journal-dialog";
@@ -7,7 +8,7 @@ import { JournalList, LedgerStatus, useLedgerText } from "@/components/ledger-ui
 import { accountBalances, entryEffects, incomeStatementEntries, isCash, periodSummary, todayDate } from "@/lib/ledger";
 
 export default function OverviewPage() {
-  const { accounts, entries, loading, clearError } = useLedger(); const { t, money, amountsHidden } = useLedgerText();
+  const { accounts, entries, loading, clearError } = useLedger(); const { t, money, amountsHidden, language } = useLedgerText();
   const [open, setOpen] = useState(false), [month, setMonth] = useState(() => todayDate().slice(0, 7));
   const [year, number] = month.split("-").map(Number);
   const start = `${month}-01`, end = `${month}-${new Date(year, number, 0).getDate()}`;
@@ -25,22 +26,57 @@ export default function OverviewPage() {
     return { key, ...sum };
   });
   const max = Math.max(1, ...days.flatMap(day => [Number(day.cashIn), Number(day.cashOut)]));
+  const magnitude = 10 ** Math.floor(Math.log10(max));
+  const chartMax = Math.max(100, (Math.floor(max / magnitude) + 1) * magnitude);
+  const axis = new Intl.NumberFormat(language === "en" ? "en-US" : "id-ID", { notation: "compact", maximumFractionDigits: 1 });
+  function metricMoney(value: bigint) {
+    const formatted = money.format(value), parts = formatted.match(/^(-?)(IDR|Rp)\s*(.+)$/u);
+    return parts ? <><span className={styles.currency}>{parts[2]}</span><span className={styles.amount}>{parts[1]}{parts[3]}</span></> : formatted;
+  }
   const recent = [...entries].sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.created_at.localeCompare(a.created_at)).slice(0, 5);
-  return <div className="page-content ledger-page">
-    <div className="page-heading"><div><div className="eyebrow">{t("YOUR BOOKS, IN BALANCE", "BUKU KEUANGAN SEIMBANG")}</div><h1>{t("Financial overview", "Ringkasan keuangan")}</h1><p className="page-subtitle">{t("Revenue, expenses, cash, and outstanding balances from your journal.", "Pendapatan, beban, kas, dan saldo yang belum lunas dari jurnalmu.")}</p></div>
-      <div className="ledger-heading-actions"><label className="ledger-date-control"><span>{t("Period", "Periode")}</span><input aria-label={t("Summary month", "Bulan ringkasan")} type="month" required value={month} onChange={e => { if (e.target.value) setMonth(e.target.value); }} /></label><button className="primary-button" disabled={loading || !accounts.length} onClick={() => { clearError(); setOpen(true); }} type="button">＋ {t("Record activity", "Catat aktivitas")}</button></div></div>
-    <LedgerStatus />{loading ? <div className="page-skeleton" /> : <>
-    <section className="ledger-summary-grid" aria-label={t("Period summary", "Ringkasan periode")}>
-      <article className="summary-card balance-card"><span className="summary-label">{t("Net cash flow", "Arus kas bersih")}</span><div className="summary-value">{money.format(period.cashIn - period.cashOut)}</div><p>{t("Cash received less cash paid", "Kas masuk dikurangi kas keluar")}</p></article>
-      <article className="summary-card"><span className="summary-label">{t("Revenue", "Pendapatan")}</span><div className="summary-value positive">{money.format(period.income)}</div><p>{t("Excludes loan proceeds and capital", "Tanpa pokok pinjaman dan modal")}</p></article>
-      <article className="summary-card"><span className="summary-label">{t("Expenses", "Beban")}</span><div className="summary-value">{money.format(period.expense)}</div><p>{t("Includes purchases on credit", "Termasuk pembelian secara kredit")}</p></article>
-      <article className="summary-card"><span className="summary-label">{t("Net profit / loss", "Laba / rugi bersih")}</span><div className="summary-value">{money.format(period.income - period.expense)}</div><p>{t("Revenue less expenses", "Pendapatan dikurangi beban")}</p></article>
-    </section>
-    <section className="ledger-position-strip"><div><span>{t("Cash & bank · today", "Kas & bank · hari ini")}</span><strong>{money.format(cash)}</strong></div><Link href="/debts"><span>{t("Outstanding liabilities", "Saldo kewajiban")}</span><strong>{money.format(debts)}</strong></Link><Link href="/debts"><span>{t("Receivables", "Piutang")}</span><strong>{money.format(receivables)}</strong></Link></section>
-    <section className="insight-grid"><article className="panel cashflow-panel"><div className="panel-heading"><div><h2>{t("Cash movement", "Pergerakan kas")}</h2><p>{t("7 days ending", "7 hari sampai")} {chartEnd}</p></div></div><div className="chart-legend"><span><i className="legend-income" />{t("Cash in", "Kas masuk")}</span><span><i className="legend-expense" />{t("Cash out", "Kas keluar")}</span></div>
-      {amountsHidden ? <div className="private-chart">{t("Chart hidden", "Grafik disembunyikan")}</div> : <div className="cashflow-bars">{days.map(day => <div className="cashflow-day" key={day.key}><div className="cashflow-pair"><i className="cashflow-bar bar-income" style={{ height: `${Math.max(1, Number(day.cashIn) / max * 100)}%` }} title={money.format(day.cashIn)} /><i className="cashflow-bar bar-expense" style={{ height: `${Math.max(1, Number(day.cashOut) / max * 100)}%` }} title={money.format(day.cashOut)} /></div><span>{day.key.slice(5)}</span></div>)}</div>}<p className="ledger-help">{t("Own-account transfers net to zero. Opening balances are excluded.", "Transfer antar rekening sendiri bersaldo bersih nol. Saldo awal tidak termasuk arus kas.")}</p></article>
-      <article className="panel breakdown-panel"><div className="panel-heading"><div><h2>{t("Expense categories", "Kategori beban")}</h2><p>{t("Selected period, after reversals", "Periode terpilih, setelah pembalik")}</p></div><Link className="subtle-link" href="/reports">{t("Reports", "Laporan")} ›</Link></div><div className="overview-category-list">{categories.map(([category, value]) => <div className="overview-category" key={category}><div className="overview-category-label"><span>{category}</span><strong>{money.format(value)}</strong></div>{!amountsHidden && <div className="overview-category-track"><i style={{ width: `${Number(value) / Number(categories[0][1]) * 100}%` }} /></div>}</div>)}{!categories.length && <p className="ledger-help">{t("No expenses in this period.", "Belum ada beban pada periode ini.")}</p>}</div></article></section>
-    <section className="panel ledger-panel"><div className="panel-heading"><div><h2>{t("Recent journal entries", "Jurnal terbaru")}</h2><p>{t("Every entry has matching debit and credit totals", "Setiap jurnal memiliki total debit dan kredit yang sama")}</p></div><Link className="subtle-link" href="/transactions">{t("All entries", "Semua jurnal")} ›</Link></div><JournalList entries={recent} /></section>
-    </>}<JournalDialog open={open} onClose={() => setOpen(false)} />
+  return <div className={`page-content ledger-page ${styles.overview}`}>
+    <div className={styles.heading}>
+      <div><h1 className={styles.title}>{t("Financial overview", "Ringkasan keuangan")}</h1><p className={styles.subtitle}>{t("Revenue, expenses and cash flow for the month.", "Pendapatan, beban, dan arus kas bulan ini.")}</p></div>
+      <div className={styles.controls}>
+        <label className={styles.period}><span>{t("Period", "Periode")}</span><input aria-label={t("Summary month", "Bulan ringkasan")} type="month" required value={month} onChange={e => { if (e.target.value) setMonth(e.target.value); }} /></label>
+        <button className={styles.record} disabled={loading || !accounts.length} onClick={() => { clearError(); setOpen(true); }} type="button"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>{t("Record activity", "Catat aktivitas")}</button>
+      </div>
+    </div>
+    <LedgerStatus />
+    {loading ? <div className={styles.skeleton} aria-label={t("Loading your books", "Memuat pembukuan")} aria-busy="true"><span /><span /><span /><span /></div> : <>
+      <section className={styles.metrics} aria-label={t("Period summary", "Ringkasan periode")}>
+        <article className={`${styles.metric} ${styles.cash}`}><span className={styles.metricLabel}>{t("Net cash flow", "Arus kas bersih")}</span><strong className={styles.metricValue}>{metricMoney(period.cashIn - period.cashOut)}</strong><p>{t("Cash received less cash paid", "Kas masuk dikurangi kas keluar")}</p></article>
+        <article className={styles.metric}><span className={styles.metricLabel}>{t("Revenue", "Pendapatan")}</span><strong className={styles.metricValue}>{metricMoney(period.income)}</strong><p>{t("Excludes loans and capital", "Tanpa pokok pinjaman dan modal")}</p></article>
+        <article className={styles.metric}><span className={styles.metricLabel}>{t("Expenses", "Beban")}</span><strong className={styles.metricValue}>{metricMoney(period.expense)}</strong><p>{t("Includes purchases on credit", "Termasuk pembelian secara kredit")}</p></article>
+        <article className={`${styles.metric} ${styles.profit}`}><span className={styles.metricLabel}>{t("Net profit / loss", "Laba / rugi bersih")}</span><strong className={styles.metricValue}>{metricMoney(period.income - period.expense)}</strong><p>{t("Revenue less expenses", "Pendapatan dikurangi beban")}</p></article>
+      </section>
+      <section className={styles.positions} aria-label={t("Current balances", "Saldo saat ini")}>
+        <Link className={styles.accountLink} href="/accounts"><span>{t("Cash & bank · today", "Kas & bank · hari ini")}</span><strong>{money.format(cash)}</strong></Link>
+        <Link className={styles.accountLink} href="/debts"><span>{t("Outstanding liabilities", "Saldo kewajiban")}</span><strong>{money.format(debts)}</strong></Link>
+        <Link className={styles.accountLink} href="/debts"><span>{t("Receivables", "Piutang")}</span><strong>{money.format(receivables)}</strong></Link>
+      </section>
+      <section className={styles.insights}>
+        <article className={styles.panel}>
+          <div className={styles.sectionHeading}><div><h2>{t("Cash movement", "Pergerakan kas")}</h2><p>{t("7 days ending", "7 hari sampai")} {chartEnd} · IDR</p></div></div>
+          {amountsHidden ? <div className={styles.privateChart}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>{t("Amounts are hidden", "Nominal disembunyikan")}</div> : <>
+            <div className={styles.legend}><span><i />{t("Cash in", "Kas masuk")}</span><span><i className={styles.outgoing} />{t("Cash out", "Kas keluar")}</span></div>
+            <div className={styles.chart} role="group" aria-label={t("Daily cash received and paid", "Kas masuk dan keluar harian")}>
+              <div className={styles.scale} aria-hidden="true"><span>{axis.format(chartMax / 100)}</span><span>{axis.format(chartMax / 200)}</span><span>0</span></div>
+              <div className={styles.bars}>{days.map(day => <div className={styles.day} key={day.key}><div className={styles.barPair}><i className={styles.bar} style={{ height: `${Number(day.cashIn) / chartMax * 100}%` }} role="img" aria-label={`${day.key} · ${t("Cash in", "Kas masuk")}: ${money.format(day.cashIn)}`} title={money.format(day.cashIn)} /><i className={`${styles.bar} ${styles.outgoing}`} style={{ height: `${Number(day.cashOut) / chartMax * 100}%` }} role="img" aria-label={`${day.key} · ${t("Cash out", "Kas keluar")}: ${money.format(day.cashOut)}`} title={money.format(day.cashOut)} /></div><span>{day.key.slice(8)}</span></div>)}</div>
+            </div>
+          </>}
+          <p className={styles.help}>{t("Own-account transfers net to zero. Opening balances are excluded.", "Transfer antar rekening sendiri bersaldo bersih nol. Saldo awal tidak termasuk arus kas.")}</p>
+        </article>
+        <article className={styles.panel}>
+          <div className={styles.sectionHeading}><div><h2>{t("Expense categories", "Kategori beban")}</h2><p>{t("Selected period, after reversals", "Periode terpilih, setelah pembalik")}</p></div><Link className={styles.sectionLink} href="/reports">{t("Reports", "Laporan")} <span aria-hidden="true">↗</span></Link></div>
+          <div className={styles.categories}>{categories.map(([category, value]) => <div className={styles.category} key={category}><div className={styles.categoryLabel}><span>{category}</span><strong>{money.format(value)}</strong></div>{!amountsHidden && <div className={styles.categoryTrack}><i style={{ width: `${Number(value) / Number(categories[0][1]) * 100}%` }} /></div>}</div>)}</div>
+          {!categories.length && <p className={styles.help}>{t("No expenses in this period.", "Belum ada beban pada periode ini.")}</p>}
+        </article>
+      </section>
+      <section className={`${styles.panel} ${styles.history}`}>
+        <div className={styles.sectionHeading}><div><h2>{t("Recent journal entries", "Jurnal terbaru")}</h2><p>{t("Every entry has matching debit and credit totals", "Setiap jurnal memiliki total debit dan kredit yang sama")}</p></div><Link className={styles.sectionLink} href="/transactions">{t("All entries", "Semua jurnal")} <span aria-hidden="true">↗</span></Link></div><JournalList entries={recent} />
+      </section>
+    </>}
+    <JournalDialog open={open} onClose={() => setOpen(false)} />
   </div>;
 }

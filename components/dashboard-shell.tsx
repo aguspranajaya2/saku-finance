@@ -131,7 +131,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           <button aria-label={collapsed ? text("Expand sidebar", "Buka sidebar") : text("Collapse sidebar", "Tutup sidebar")} aria-expanded={!collapsed} className="sidebar-toggle" onClick={toggleSidebar} title={collapsed ? text("Expand sidebar", "Buka sidebar") : text("Collapse sidebar", "Tutup sidebar")} type="button"><span>{collapsed ? "›" : "‹"}</span></button>
           <button aria-label={text("Close navigation", "Tutup navigasi")} className="sidebar-mobile-close" onClick={() => setMobileOpen(false)} type="button">×</button>
         </div>
-        <div className="sidebar-label">{text("WORKSPACE", "RUANG KERJA")}</div>
+        <div className="sidebar-label">{text("Workspace", "Ruang kerja")}</div>
         <nav aria-label={text("Main navigation", "Navigasi utama")} className="side-nav">
           {navigation.map((item) => {
             const label = labels[item.key];
@@ -140,7 +140,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="sidebar-spacer" />
-        <div className="sidebar-tip"><div className="tip-icon"><span>✦</span></div><p className="tip-title">{text("Small steps add up", "Catat sedikit demi sedikit")}</p><p className="tip-copy">{text("A small habit today can make your finances clearer.", "Kebiasaan kecil hari ini bikin keuangan lebih jelas.")}</p></div>
         <div className="profile-row">
           <div className="avatar">{email ? email.slice(0, 1).toUpperCase() : "S"}</div>
           <div className="profile-copy"><strong>{email ? email.split("@")[0] : text("Preview", "Pratinjau")}</strong><span>{email || text("Personal account", "Akun pribadi")}</span></div>
@@ -149,7 +148,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </aside>
       <section className="main-column">
         <header className="topbar">
-          <button aria-controls="workspace-sidebar" aria-expanded={mobileOpen} aria-label={mobileOpen ? text("Close navigation", "Tutup navigasi") : text("Open navigation", "Buka navigasi")} className="mobile-menu-button" onClick={() => setMobileOpen((open) => !open)} type="button"><span>☰</span></button>
+          <button aria-controls="workspace-sidebar" aria-expanded={mobileOpen} aria-label={mobileOpen ? text("Close navigation", "Tutup navigasi") : text("Open navigation", "Buka navigasi")} className="mobile-menu-button" onClick={() => setMobileOpen((open) => !open)} type="button"><Icon path="M5 6h14M5 12h14M5 18h14" size={18} /></button>
           <div className="breadcrumb"><span>{text("Finance", "Keuangan")}</span><span className="breadcrumb-chevron">›</span><strong>{pageName}</strong></div>
           <div className="topbar-right"><span className="today-label">{new Date().toLocaleDateString(language === "en" ? "en-US" : "id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" })}</span><AmountVisibilityToggle /><PreferenceControls />{!configured && <Link className="sign-in-link" href="/login">{text("Sign in", "Masuk")}</Link>}</div>
         </header>
