@@ -1,6 +1,7 @@
 node_modules/
 .tools/
 .playwright-cli/
+.codex-remote-attachments/
 .next/
 out/
 build/

@@ -11,13 +11,21 @@ const aliases: Record<string, { type: EntryType; debit: string; credit: string; 
   modal: { type: "journal", debit: "1000", credit: "3000" }, prive: { type: "journal", debit: "3000", credit: "1000" },
 };
 const synonyms: Record<string, string> = { masuk: "pemasukan", income: "pemasukan", keluar: "pengeluaran", expense: "pengeluaran", hutang: "utang", borrow: "utang", lend: "piutang", cicilan: "bayar_utang", bayar_hutang: "bayar_utang", repay_debt: "bayar_utang", collect_receivable: "terima_piutang", paylater: "kartu_kredit" };
-export type TelegramJournalCommand = { type: EntryType; debit: string; credit: string; amount: Rupiah; category: string; memo: string; legacy?: "income" | "expense" };
+export type TelegramJournalCommand = { type: EntryType; debit: string; credit: string; amount: Rupiah; category: string; memo: string; date?: string; legacy?: "income" | "expense" };
 export function parseTelegramJournal(text: string): TelegramJournalCommand | "invalid_amount" | "invalid_format" | null {
   if (/^\/jurnal(?:@\w+)?(?:\s|$)/i.test(text)) {
     const match = text.match(/^\/jurnal(?:@\w+)?\s+(\d{3,12})\s+(\d{3,12})\s+(\S+)(?:\s+(ribu|rb|k|juta|jt|miliar|milyar))?\s+(.+)$/i);
     if (!match || match[1] === match[2]) return "invalid_format";
     const amount = parseRupiahAmount(match[3] + (match[4] ?? "")); if (amount === null) return "invalid_amount";
-    return { type: "journal", debit: match[1], credit: match[2], amount, category: "Jurnal", memo: match[5].trim().slice(0, 240) };
+    const dated = match[5].match(/^@([^\s]+)\s+(.+)$/);
+    let date: string | undefined;
+    if (match[5].startsWith("@")) {
+      if (!dated || !/^\d{4}-\d{2}-\d{2}$/.test(dated[1])) return "invalid_format";
+      const parsed = new Date(`${dated[1]}T00:00:00Z`);
+      if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dated[1] || dated[1] < "1900-01-01") return "invalid_format";
+      date = dated[1];
+    }
+    return { type: "journal", debit: match[1], credit: match[2], amount, category: "Jurnal", memo: (dated?.[2] ?? match[5]).trim().slice(0, 240), ...(date ? { date } : {}) };
   }
   if (!/^\/catat(?:@\w+)?(?:\s|$)/i.test(text)) return null;
   const match = text.match(/^\/catat(?:@\w+)?\s+(\S+)\s+(\S+)(?:\s+(ribu|rb|k|juta|jt|miliar|milyar))?\s+(\S+)(?:\s+(.+))?$/i);

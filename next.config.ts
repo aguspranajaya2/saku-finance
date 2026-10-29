@@ -36,6 +36,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["tesseract.js"],
   outputFileTracingIncludes: {
     "/api/telegram/webhook": workerFiles,
+    "/api/receipts/recognize": workerFiles,
   },
 };
 

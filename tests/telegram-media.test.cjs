@@ -131,7 +131,7 @@ async function runWebhook(message, options = {}) {
       "@/lib/money": loadTypeScript("lib/money.ts"),
       "@/lib/telegram-journal": loadTypeScript("lib/telegram-journal.ts", { modules: { "@/lib/money": loadTypeScript("lib/money.ts") } }),
       "@/lib/supabase/admin": { createAdminClient: () => admin },
-      "@/lib/receipts/ocr": { ReceiptOcrBusyError: class extends Error {}, recognizeReceipt: async () => { recognized++; return { merchant: "TEST SHOP", amount: 25000, date: "2026-10-26", confidence: 90 }; } },
+      "@/lib/receipts/ocr": { ReceiptOcrBusyError: class extends Error {}, recognizeReceipt: async () => { recognized++; return options.candidate ?? { merchant: "TEST SHOP", amount: 25000, date: "2026-10-26", confidence: 90 }; } },
     },
     globals: { fetch: fetcher, process: { env: { TELEGRAM_BOT_TOKEN: "test-token", TELEGRAM_WEBHOOK_SECRET: "test-secret" } } },
   });
@@ -165,6 +165,22 @@ test("duplicate OCR updates never start a worker or create another receipt", asy
   assert.equal(result.recognized, 0);
   assert.equal(result.writes.length, 0);
   assert.equal(result.sent.length, 0);
+});
+
+test("transfer proof never enters cash-expense confirmation and always releases its job", async () => {
+  const result = await runWebhook({ photo: [{ file_id: "proof" }] }, { candidate: { kind: "bank_transfer", merchant: "Transfer ke TEST RECIPIENT", amount: 11000, date: "2026-10-29", confidence: 88, issue: null } });
+  assert.equal(result.response.status, 200); assert.equal(result.writes.length, 0);
+  assert.ok(result.sent.some(reply => reply.text.includes('/jurnal 5000 1010 11000 @2026-10-29')));
+  assert.ok(!result.sent.some(reply => reply.reply_markup));
+  assert.ok(result.rpcCalls.some(call => call.name === "finish_receipt_job"));
+});
+
+test("dated manual journals use the proof date instead of today's date", async () => {
+  const result = await runWebhook({ text: "/jurnal 5000 1010 11000 @2026-10-29 Test purchase" });
+  const posting = result.rpcCalls.find(call => call.name === "post_telegram_journal");
+  assert.equal(posting.args.p_entry_date, "2026-10-29"); assert.equal(posting.args.p_memo, "Test purchase");
+  const invalid = await runWebhook({ text: "/jurnal 5000 1010 11000 @2026-02-30 Test purchase" });
+  assert.ok(!invalid.rpcCalls.some(call => call.name === "post_telegram_journal"));
 });
 
 test("busy, revoked, and over-quota receipt jobs are rejected before downloads and OCR", async () => {

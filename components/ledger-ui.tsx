@@ -47,10 +47,10 @@ export function JournalList({ entries, onReverse }: { entries: JournalEntry[]; o
   const { accounts } = useLedger();
   const { t, money, language } = useLedgerText();
   const names = new Map(accounts.map(a => [a.id, `${a.code} · ${a.name}`]));
-  return <div className="journal-list">{entries.map(entry => <details className="journal-record" key={entry.id}>
+  return <div className="journal-list">{entries.map(entry => <article className="journal-record" key={entry.id}><details>
     <summary><span className="journal-date">{entry.entry_date}</span><span className="journal-record-title"><strong>{entry.memo}</strong><span>{entryTypeLabel(entry.entry_type, language)} · {entry.category}{entry.reversed_by ? ` · ${t("Reversed", "Sudah dibalik")}` : ""}</span></span><strong className="journal-record-total">{money.format(journalTotal(entry))}<span>{t("Debit = Credit", "Debit = Kredit")}</span></strong></summary>
     <div className="ledger-table-wrap"><table className="ledger-table"><thead><tr><th>{t("Account", "Akun")}</th><th className="number">Debit</th><th className="number">{t("Credit", "Kredit")}</th></tr></thead>
       <tbody>{entry.journal_lines.map((line, index) => <tr key={index}><td>{names.get(line.account_id) ?? t("Account unavailable", "Akun tidak tersedia")}</td><td className="number">{line.debit ? money.format(line.debit) : "—"}</td><td className="number">{line.credit ? money.format(line.credit) : "—"}</td></tr>)}</tbody></table></div>
-    <div className="journal-record-footer"><span>{t("Source", "Sumber")}: {entry.source} · #{entry.id.slice(0, 8)}</span>{onReverse && !entry.reversal_of && !entry.reversed_by && <button className="subtle-link" onClick={() => onReverse(entry)} type="button">{t("Post reversal", "Buat jurnal pembalik")}</button>}</div>
-  </details>)}{!entries.length && <div className="empty-state">{t("No journal entries for this selection.", "Belum ada jurnal untuk pilihan ini.")}</div>}</div>;
+    <div className="journal-record-footer"><span>{t("Source", "Sumber")}: {entry.source} · #{entry.id.slice(0, 8)}</span></div>
+  </details><div className="journal-record-actions"><span>{t("Tap the entry for debit / credit details", "Ketuk jurnal untuk rincian debit / kredit")}</span>{onReverse && !entry.reversal_of && !entry.reversed_by && <button className="subtle-link" onClick={() => onReverse(entry)} type="button">{t("Correct / reverse", "Koreksi / balik jurnal")}</button>}</div></article>)}{!entries.length && <div className="empty-state">{t("No journal entries for this selection.", "Belum ada jurnal untuk pilihan ini.")}</div>}</div>;
 }
