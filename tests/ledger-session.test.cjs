@@ -10,9 +10,21 @@ function harness(){
   const router={replace(){}};
   const app=mount('components/ledger-provider.tsx','LedgerProvider',{'@/lib/money':load('lib/money.ts'),'next/navigation':{useRouter:()=>router},'@/lib/supabase/client':{createClient:()=>client},'@/lib/ledger':load('lib/ledger.ts'),
     '@/lib/verified-session':load('lib/verified-session.ts',{globals:{window,document}}),'@/lib/ledger-client':{readLedger(client,owner,current){const r={owner,current,...deferred()};reads.push(r);return r.promise}}
-  },{process:{env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.invalid',NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:'test'}}});
-  return{...app,reads,writes,change(id){user=id?{id}:null;inside=true;try{callback(id?'SIGNED_IN':'SIGNED_OUT',user?{user}:null)}finally{inside=false}},focus(){window.dispatchEvent(new Event('focus'))}};
+  },{window,document,process:{env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.invalid',NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:'test'}}});
+  return{...app,reads,writes,change(id){user=id?{id}:null;inside=true;try{callback(id?'SIGNED_IN':'SIGNED_OUT',user?{user}:null)}finally{inside=false}},focus(){window.dispatchEvent(new Event('focus'))},reset(userId){const event=new Event('storage');event.key='saku-books-reset';event.newValue=JSON.stringify({userId});window.dispatchEvent(event);}};
 }
+
+test('reset in another tab invalidates only the current owner and ignores late old reads',async()=>{
+  const app=harness();try{
+    await tick();app.reads[0].resolve(books('A'));await tick();
+    app.reset('B');assert.equal(app.value().entries.length,1);
+    const save=app.value().postJournal(journal('A'));await tick();
+    app.reset('A');assert.equal(app.value().entries.length,0);assert.equal(app.value().accounts.length,0);
+    app.writes[0].resolve({data:'old-post',error:null});assert.equal(await save,false);
+    await tick();app.reads[1].resolve({accounts:books('A').accounts,entries:[]});await tick();
+    assert.equal(app.value().entries.length,0);assert.equal(app.value().accounts.length,2);
+  }finally{app.dispose();}
+});
 test('ledger account switches clear both charts and journals and reject late old-owner reads',async()=>{
   const app=harness();try{await tick();app.change('B');assert.equal(app.value().accounts.length,0);assert.equal(app.value().entries.length,0);await tick();app.reads[1].resolve(books('B'));await tick();app.reads[0].resolve(books('A'));await tick();assert.equal(app.value().accounts[0].id,'B-cash');assert.equal(app.value().entries[0].id,'B-entry')}finally{app.dispose()}
 });

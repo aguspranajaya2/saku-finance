@@ -8,6 +8,7 @@ import { usePreferences } from "@/lib/preferences";
 import { createClient } from "@/lib/supabase/client";
 import { UsernameSettings } from "@/components/username-settings";
 import { watchVerifiedSession } from "@/lib/verified-session";
+import { ResetBookkeeping } from "@/components/reset-bookkeeping";
 
 export default function SettingsPage() {
   const { language, theme } = usePreferences();
@@ -103,6 +104,7 @@ export default function SettingsPage() {
         </article>
       </section>
 
+      <ResetBookkeeping key={userId ?? "preview"} userId={userId} onReset={() => { operation.current += 1; setPairingCode(""); setPairingLink(""); setPairingMessage(""); setPairingAction(""); }} />
       <footer className="page-footer"><span>© 2026 Saku</span><span>{text("Settings are saved in this browser", "Pengaturan tampilan tersimpan di browser ini")}</span></footer>
     </div>
   );
