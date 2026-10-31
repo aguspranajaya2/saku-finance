@@ -6,6 +6,7 @@ import { downloadReceiptImage, normalizeReceiptImage, ReceiptImageError, selectR
 import { consumeSecurityLimits } from "@/lib/security-limits";
 import { exactRupiah, formatRupiah, validRupiah } from "@/lib/money";
 import { parseTelegramJournal } from "@/lib/telegram-journal";
+import { transferPreview } from "@/lib/receipts/transfer-preview";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -101,6 +102,7 @@ const helpText = [
   "/catat modal 1jt Modal setoran modal",
   "/catat prive 100rb Modal penarikan pribadi",
   "/jurnal 1010 2000 1jt Pinjaman masuk Bank (kode debit, kredit, nominal, keterangan)",
+  "/jurnal 5000 1010 11000 @2026-10-29 Bayar belanja (tanggal opsional)",
   "/akun — kode akun dan saldo; /utang; /piutang",
   "/ringkasan — ringkasan bulan ini",
   "/help — bantuan",
@@ -276,7 +278,18 @@ export async function POST(request: Request) {
       const image = await normalizeReceiptImage(await downloadReceiptImage(token, receiptImage));
       const candidate = await recognizeReceipt(image);
       if (!candidate.amount || !validRupiah(candidate.amount)) {
-        await sendMessage(token, message.chat.id, "Total belum terbaca dengan yakin. Coba foto yang lebih jelas atau catat manual dengan /catat.");
+        const reason = candidate.issue === "ambiguous_amount" ? "Ada beberapa nominal berbeda pada bukti. Nominal belum dipilih otomatis."
+          : candidate.issue === "unsupported_currency" ? "Bukti memuat mata uang selain rupiah. Konversi dan catat nominal IDR secara manual."
+          : candidate.issue === "unsuccessful" ? "Status transfer pada bukti gagal atau masih diproses. Bukti ini tidak disiapkan untuk pencatatan otomatis."
+          : "Total belum terbaca dengan yakin.";
+        await sendMessage(token, message.chat.id, `${reason} Coba foto yang lebih jelas atau catat manual dengan /catat.`);
+        return NextResponse.json({ ok: true });
+      }
+
+      if (candidate.kind === "bank_transfer") {
+        // A transfer's purpose and the owner's bank cannot be inferred from its
+        // picture. Never route it through legacy cash-expense confirmation.
+        await sendMessage(token, message.chat.id, transferPreview(candidate));
         return NextResponse.json({ ok: true });
       }
 
@@ -373,7 +386,7 @@ export async function POST(request: Request) {
     const { amount, category, memo: description } = command;
     if (!command.legacy) {
       const { data: result, error } = await admin.rpc("post_telegram_journal", {
-        p_chat_id: message.chat.id, p_update_id: update.update_id, p_entry_date: makassarDate(), p_memo: description,
+          p_chat_id: message.chat.id, p_update_id: update.update_id, p_entry_date: command.date ?? makassarDate(), p_memo: description,
         p_entry_type: command.type, p_category: category, p_debit_code: command.debit, p_credit_code: command.credit, p_amount: amount,
       });
       const status = result?.status;

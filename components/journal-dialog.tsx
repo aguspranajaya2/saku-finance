@@ -5,9 +5,10 @@ import { useLedger } from "@/components/ledger-provider";
 import { LedgerModal, LedgerStatus, useLedgerText } from "@/components/ledger-ui";
 import { entryTypeLabel, quickAccounts, quickKinds, todayDate, validateJournal, type EntryType, type JournalLine, type QuickKind } from "@/lib/ledger";
 import { parseRupiahAmount, exactRupiah } from "@/lib/money";
+import type { ReceiptCandidate } from "@/lib/receipts/parse";
 
 type InputLine = { key: string; account: string; debit: string; credit: string };
-export function JournalDialog({ open, onClose, initialKind = "expense", initialAccount }: { open: boolean; onClose: () => void; initialKind?: QuickKind | "journal"; initialAccount?: string }) {
+export function JournalDialog({ open, onClose, initialKind = "expense", initialAccount, receipt }: { open: boolean; onClose: () => void; initialKind?: QuickKind | "journal"; initialAccount?: string; receipt?: ReceiptCandidate }) {
   const { accounts, postJournal, saving, clearError } = useLedger();
   const { t, language, money } = useLedgerText();
   const [mode, setMode] = useState<"quick" | "journal">("quick"), [kind, setKind] = useState<QuickKind>("expense");
@@ -15,21 +16,28 @@ export function JournalDialog({ open, onClose, initialKind = "expense", initialA
   const [debit, setDebit] = useState(""), [credit, setCredit] = useState(""), [amount, setAmount] = useState("");
   const [memo, setMemo] = useState(""), [date, setDate] = useState(todayDate), [category, setCategory] = useState("Lainnya");
   const [lines, setLines] = useState<InputLine[]>([]), [validation, setValidation] = useState("");
+  const [activityChosen, setActivityChosen] = useState(true);
   const request = useRef<{ fingerprint: string; id: string } | null>(null);
   function chooseKind(next: QuickKind) {
     const drs = quickAccounts(next, accounts, "debit"), crs = quickAccounts(next, accounts, "credit");
     const dr = drs.find(a => a.id === initialAccount)?.id ?? drs[0]?.id ?? "";
     const cr = crs.find(a => a.id === initialAccount && a.id !== dr)?.id ?? crs.find(a => a.id !== dr)?.id ?? "";
-    setKind(next); setDebit(dr); setCredit(cr); setValidation("");
+    setKind(next); setDebit(dr); setCredit(cr); setValidation(""); setActivityChosen(true);
   }
   useEffect(() => {
     if (!open) return;
     setMode(initialKind === "journal" ? "journal" : "quick"); chooseKind(initialKind === "journal" ? "expense" : initialKind);
     setMemo(""); setAmount(""); setDate(todayDate()); setCategory("Lainnya"); setManualType("journal"); setValidation(""); request.current = null; clearError();
     setLines([{ key: crypto.randomUUID(), account: initialAccount ?? accounts[0]?.id ?? "", debit: "", credit: "" }, { key: crypto.randomUUID(), account: accounts.find(a => a.account_type === "revenue" && a.id !== initialAccount)?.id ?? accounts.find(a => a.id !== initialAccount)?.id ?? "", debit: "", credit: "" }]);
+    setActivityChosen(!receipt);
+    if (receipt) {
+      setMemo(receipt.merchant); setAmount(receipt.amount === null ? "" : String(receipt.amount)); setDate(receipt.date ?? todayDate());
+      setCategory(receipt.kind === "bank_transfer" ? "Transfer" : "Belanja");
+      setDebit(""); setCredit(""); // Purpose and account ownership require user choice.
+    }
     // Form resets only on a new dialog, not when a background refresh replaces arrays.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialKind, initialAccount]);
+  }, [open, initialKind, initialAccount, receipt]);
   if (!open) return null;
   const parsedAmount = parseRupiahAmount(amount);
   const journalLines: JournalLine[] = mode === "quick" ? [
@@ -37,7 +45,7 @@ export function JournalDialog({ open, onClose, initialKind = "expense", initialA
   ] : lines.map(line => ({ account_id: line.account, debit: !line.debit.trim() || /^0+(?:[.,]0{1,2})?$/.test(line.debit.trim()) ? 0 : parseRupiahAmount(line.debit) ?? -1,
     credit: !line.credit.trim() || /^0+(?:[.,]0{1,2})?$/.test(line.credit.trim()) ? 0 : parseRupiahAmount(line.credit) ?? -1 }));
   const debitTotal = journalLines.reduce((s, l) => s + (exactRupiah(l.debit) > 0n ? exactRupiah(l.debit) : 0n), 0n), creditTotal = journalLines.reduce((s, l) => s + (exactRupiah(l.credit) > 0n ? exactRupiah(l.credit) : 0n), 0n);
-  const balanced = validateJournal(journalLines) && (mode !== "journal" || manualType !== "closing" || journalLines.every(l => accounts.some(a => a.id === l.account_id && ["equity", "revenue", "expense"].includes(a.account_type))));
+  const balanced = (mode === "journal" || activityChosen) && validateJournal(journalLines) && (mode !== "journal" || manualType !== "closing" || journalLines.every(l => accounts.some(a => a.id === l.account_id && ["equity", "revenue", "expense"].includes(a.account_type))));
   async function submit(event: FormEvent) {
     event.preventDefault(); if (saving) return;
     if (!balanced || !memo.trim() || !date) { setValidation(t("Use at least two different accounts, one positive side per line, and equal debit/credit totals.", "Gunakan minimal dua akun berbeda, satu sisi positif per baris, dan total debit/kredit yang sama.")); return; }
@@ -49,8 +57,9 @@ export function JournalDialog({ open, onClose, initialKind = "expense", initialA
   }
   function updateLine(key: string, field: "account" | "debit" | "credit", value: string) { setLines(previous => previous.map(line => line.key === key ? { ...line, [field]: value } : line)); }
   return <LedgerModal title={t("Record a journal entry", "Catat jurnal")} onClose={onClose} busy={saving}><form className="transaction-form ledger-entry-form" onSubmit={submit}>
+    {receipt && <div className="receipt-review-note" role="status"><strong>{t("Review the reading before posting", "Periksa hasil baca sebelum menyimpan")}</strong><p>{receipt.kind === "bank_transfer" ? t("Choose whether this transfer is a purchase, debt payment, loan or transfer between your own accounts. Select the actual bank account; no accounts have been chosen for you.", "Pilih apakah transfer ini belanja, bayar utang, pinjaman, atau antar rekening sendiri. Pilih rekening bank sebenarnya; akun belum dipilih otomatis.") : t("Check the amount, purpose and payment accounts. OCR can make mistakes.", "Periksa nominal, tujuan, dan akun pembayaran. OCR bisa keliru.")}</p>{(!receipt.date || receipt.issue) && <p>{t("Some details could not be verified. Fill them in manually; a missing date defaults to today.", "Sebagian detail belum dapat dipastikan. Lengkapi manual; tanggal yang tidak terbaca memakai hari ini.")}</p>}</div>}
     <div className="kind-toggle" role="group" aria-label={t("Entry mode", "Mode pencatatan")}><button aria-pressed={mode === "quick"} className={mode === "quick" ? "active" : ""} onClick={() => setMode("quick")} type="button">{t("Guided entry", "Pencatatan praktis")}</button><button aria-pressed={mode === "journal"} className={mode === "journal" ? "active" : ""} onClick={() => setMode("journal")} type="button">{t("General journal", "Jurnal umum")}</button></div>
-    {mode === "quick" && <><label>{t("Activity", "Aktivitas")}<select value={kind} onChange={e => chooseKind(e.target.value as QuickKind)}>{quickKinds.map(k => <option value={k} key={k}>{entryTypeLabel(k, language)}</option>)}</select></label>
+    {mode === "quick" && <><label>{t("Activity", "Aktivitas")}<select required value={activityChosen ? kind : ""} onChange={e => { chooseKind(e.target.value as QuickKind); if (receipt) { setDebit(""); setCredit(""); } }}><option value="" disabled>{t("Choose the transaction purpose", "Pilih tujuan transaksi")}</option>{quickKinds.map(k => <option value={k} key={k}>{entryTypeLabel(k, language)}</option>)}</select></label>
       <label>{t("Amount · IDR", "Nominal · IDR")}<input autoFocus required name="amount" inputMode="decimal" maxLength={64} placeholder="3681341.75 / 30rb / 1,5jt" value={amount} onChange={e => setAmount(e.target.value)} /></label>
       <div className="form-row"><label>{t("Debit account", "Akun debit")}<select required value={debit} onChange={e => setDebit(e.target.value)}><option value="">{t("Choose account", "Pilih akun")}</option>{quickAccounts(kind, accounts, "debit").map(a => <option value={a.id} key={a.id}>{a.code} · {a.name}</option>)}</select></label>
       <label>{t("Credit account", "Akun kredit")}<select required value={credit} onChange={e => setCredit(e.target.value)}><option value="">{t("Choose account", "Pilih akun")}</option>{quickAccounts(kind, accounts, "credit").map(a => <option value={a.id} key={a.id}>{a.code} · {a.name}</option>)}</select></label></div>

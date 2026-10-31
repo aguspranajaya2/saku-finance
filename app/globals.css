@@ -715,3 +715,51 @@ html[data-theme="dark"] .app-shell { --muted: #b0b2bd; }
   .app-shell .preference-controls { gap: 4px; }
   .app-shell .sign-in-link { display: none; }
 }
+
+/* Journal evidence and corrections: a readable action row stays outside the
+   disclosure. On phones totals use their own full-width line, never clipping. */
+.receipt-review-note { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); font-size: 14px; line-height: 1.6; }
+.receipt-review-note p { margin: 6px 0 0; color: var(--muted); }
+.journal-record-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding: 0 2px 8px; color: var(--muted); font-size: 12px; }
+.journal-record-actions button { min-height: 44px; }
+.journal-record-title { min-width: 0; }
+.journal-record-total { min-width: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 650px) {
+  .journal-record summary { grid-template-columns: minmax(0, 1fr); }
+  .journal-record-total { text-align: left; font-size: 15px; overflow-wrap: anywhere; }
+  .journal-record-title { font-size: 14px; }
+  .journal-record-title span, .journal-record-total span { font-size: 12px; }
+  .journal-record-actions > span { flex: 1 1 160px; }
+  .ledger-selection-summary { flex-wrap: wrap; overflow-wrap: anywhere; gap: 8px; }
+  .ledger-toolbar input, .ledger-toolbar select { min-height: 44px; font-size: 14px; }
+}
+.journal-page { --muted: #606979; }
+[data-theme="dark"] .journal-page { --muted: #b0b7c4; }
+.journal-page h1 { font-size: 26px; }
+.journal-page .page-subtitle { font-size: 14px; }
+.journal-page .primary-button, .journal-page .secondary-button { min-height: 44px; font-size: 14px; box-shadow: none; }
+.journal-page .primary-button { color: var(--paper); background: var(--ink); }
+.journal-page .demo-note { font-size: 12px; color: var(--muted); }
+.journal-page .ledger-toolbar label { font-size: 13px; }
+.journal-page .journal-record-title, .journal-page .journal-record-total { font-size: 14px; }
+.journal-page .journal-record-title span, .journal-page .journal-record-total span, .journal-page .journal-date, .journal-page .journal-record-footer { font-size: 12px; }
+.journal-page .subtle-link { font-size: 12px; }
+.journal-filters { margin-bottom: 16px; }
+.journal-filters > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ink); font-size: 14px; cursor: pointer; }
+.journal-filters > summary::after { content: "+"; margin-left: auto; }
+.journal-filters[open] > summary::after { content: "−"; }
+.journal-filters .ledger-toolbar { margin: 12px 0; }
+.journal-page .ledger-modal .primary-button { color: var(--paper); background: var(--ink); }
+@media (max-width: 650px) {
+  .journal-page { padding-left: 16px; padding-right: 16px; }
+  .journal-page .ledger-modal .transaction-form input, .journal-page .ledger-modal .transaction-form select { font-size: 16px; min-height: 44px; }
+  .journal-page .ledger-modal .transaction-form label, .journal-page .ledger-help { font-size: 13px; }
+}
+.journal-page .page-subtitle { color: var(--muted); }
+.journal-page .journal-record-title span, .journal-page .journal-record-total span, .journal-page .journal-record-actions, .journal-page .ledger-selection-summary, .journal-page .ledger-table { font-size: 13px; }
+.journal-page .subtle-link { font-size: 14px; }
+.journal-page .ledger-heading-actions .secondary-button { margin: 0; }
+@media (max-width: 650px) {
+  .journal-page .ledger-heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .journal-page .ledger-heading-actions .primary-button { grid-column: 1 / -1; }
+}

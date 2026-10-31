@@ -207,7 +207,16 @@ Jurnal yang sudah diposting tidak diedit atau dihapus melalui UI. Buka rincian j
 
 Pada jurnal manual, pilih tujuan **Closing / Penutup** untuk memindahkan pendapatan/beban ke ekuitas/laba ditahan. Jurnal penutup hanya menerima akun pendapatan, beban, dan ekuitas. Laporan laba rugi mengecualikan jurnal penutup beserta pembaliknya; neraca saldo serta neraca tetap memperhitungkannya. Proses penutupan dilakukan manual, tanpa mengunci periode otomatis.
 
-Transaksi dari versi lama serta konfirmasi OCR tetap masuk melalui jalur kompatibilitas dan otomatis menjadi jurnal. Karena versi lama tidak menyimpan rekening pembayaran, transaksi tersebut memakai akun **Kas**. Gunakan pembalik dan jurnal pengganti untuk memindahkannya ke rekening yang benar. Pembaruan/penghapusan melalui jalur lama juga membuat pembalik pada tanggal transaksi aslinya. Struk OCR saat ini mengasumsikan pembayaran **Kas**; untuk bank/kredit pilih Batal dan catat dengan akun yang sesuai.
+Transaksi dari versi lama serta konfirmasi struk belanja di bot masuk melalui jalur kompatibilitas dan otomatis menjadi jurnal **Kas**. Untuk bank/kredit, pilih Batal dan gunakan jurnal dengan rekening yang benar. Bukti transfer bank memakai alur terpisah: hasil baca ditampilkan tanpa disimpan sebagai pengeluaran kas. Pembaruan/penghapusan melalui jalur lama membuat pembalik pada tanggal transaksi aslinya.
+
+### Mengoreksi transaksi yang salah
+
+1. Buka **General journal / Jurnal umum**, cari transaksi, lalu pilih **Correct / reverse / Koreksi / balik jurnal**.
+2. Periksa jurnal dan tanggal pembalik. Untuk kesalahan input, tanggal asli membatalkan dampaknya pada periode yang sama.
+3. Simpan pembalik. Nominal yang salah dinetralkan; jurnal asli tetap ada untuk riwayat audit.
+4. Jika transaksi sebenarnya terjadi, pilih **Record activity / Catat aktivitas** dan simpan penggantinya satu kali dengan nominal, tanggal, jenis, dan akun yang benar. Jika transaksi duplikat, cukup buat pembalik.
+
+Jangan menambahkan transaksi bernilai negatif untuk mengoreksi. Jurnal yang sudah dibalik tidak dapat dibalik lagi.
 
 
 ## Login dengan username
@@ -311,6 +320,18 @@ Nominal menerima `30000`, `30.000`, `30,000`, `30rb`, `30ribu`, `30k`, dan `1,5j
 Tesseract.js membaca gambar di server tanpa biaya API OCR per penggunaan. Model bahasa Indonesia dan Inggris diunduh saat pemakaian pertama.
 
 Bot meminta konfirmasi sebelum menyimpan hasil pembacaan. Foto struk tidak disimpan ke database. Hasil OCR bergantung pada kualitas foto, sehingga detail transaksi tetap perlu diperiksa.
+
+**Bukti transfer bank:** parser memprioritaskan label `Transfer Amount` / `Nominal Transfer`, membaca tanggal seperti `29 Oct 2026` dan nama penerima. Nomor rekening dan referensi tidak digunakan sebagai nominal. Hasil ambigu, mata uang asing, atau transfer gagal/tertunda tidak menghasilkan nominal siap simpan. Ini bukan verifikasi keaslian bukti atau konfirmasi ke bank.
+
+Bot menampilkan draf transfer dan contoh perintah, tanpa tombol konfirmasi pengeluaran kas. Tujuan transfer harus ditentukan pengguna: belanja, pembayaran pokok utang, pinjaman/piutang, atau antar rekening sendiri. Lihat kode akun lewat `/akun`. Tanggal bukti dapat ditulis pada jurnal manual:
+
+```text
+/jurnal 5000 1010 11000 @2026-10-29 Bayar belanja
+```
+
+`@YYYY-MM-DD` bersifat opsional; tanpa tanggal, bot memakai tanggal hari ini. Kode `5000` dan `1010` hanya contoh akun Beban dan Bank bawaan; sesuaikan dengan rekening sebenarnya. Jangan mengirim perintah pencatatan lagi untuk transaksi yang sudah disimpan.
+
+**Unggah dari web:** buka Jurnal umum → **Read proof / Baca bukti**, unggah JPG/PNG/WebP maksimal **4 MB**, lalu periksa draf. Pilih aktivitas, akun debit/kredit, nominal, dan tanggal sebelum **Post journal / Simpan jurnal**. Tidak ada jurnal yang dibuat saat gambar dibaca. Endpoint hanya menerima pengguna terautentikasi dan permintaan dari origin yang sama; ada batas bersama 3 pembacaan/menit dan 20/hari per akun di web, serta 10/menit untuk seluruh web. Worker proses yang sama dibatasi dua. Telegram mempertahankan batas dan lease OCR sendiri. Gambar serta teks OCR mentah tidak disimpan dalam database.
 
 Gambar dapat dikirim sebagai **Photo** maupun **File/Document** di Telegram. Isi file diperiksa sebelum OCR; PDF dan format selain JPG, PNG, atau WebP akan mendapat petunjuk format yang didukung. Gambar dibatasi **20 megapixel**, sisi maksimal **10.000 pixel**, dan satu frame; gambar dinormalisasi sebelum dibaca.
 
