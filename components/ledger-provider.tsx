@@ -1,14 +1,14 @@
 "use client";
 import { exactRupiah, minorToRupiah, validRupiah, type Rupiah } from "@/lib/money";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { watchVerifiedSession } from "@/lib/verified-session";
 import { readLedger } from "@/lib/ledger-client";
 import { demoAccounts, demoJournal, todayDate, validateJournal, type JournalEntry, type LedgerAccount, type NewAccount, type NewJournal } from "@/lib/ledger";
 
-type LedgerError = "" | "migration" | "connection" | "save" | "invalid" | "duplicate";
+type LedgerError = "" | "migration" | "connection" | "save" | "invalid" | "duplicate" | "reset";
 type LedgerContextValue = {
   configured: boolean; accounts: LedgerAccount[]; entries: JournalEntry[]; loading: boolean; saving: boolean; error: LedgerError;
   clearError: () => void; refresh: () => void;
@@ -21,7 +21,7 @@ const LedgerContext = createContext<LedgerContextValue | null>(null);
 const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 function errorCode(error: unknown): LedgerError {
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
-  return ["42P01", "42703", "PGRST200", "PGRST201", "PGRST202", "PGRST204", "PGRST205"].includes(code) ? "migration" : code === "23505" ? "duplicate" : ["22023", "23514"].includes(code) ? "invalid" : "save";
+  return ["42P01", "42703", "PGRST200", "PGRST201", "PGRST202", "PGRST204", "PGRST205"].includes(code) ? "migration" : code === "40001" ? "reset" : code === "23505" ? "duplicate" : ["22023", "23514"].includes(code) ? "invalid" : "save";
 }
 export function LedgerProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -30,6 +30,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(configured);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<LedgerError>("");
+  const [booksRevision, setBooksRevision] = useState(0);
   const owner = useRef<string | null>(null), generation = useRef(0), operation = useRef(0), busy = useRef(false);
   const refreshRef = useRef<() => void>(() => {});
   const current = (user: string | null, version: number) => owner.current === user && generation.current === version;
@@ -53,7 +54,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       onError() { setLoading(false); setError("connection"); },
     });
     refreshRef.current = watcher.refresh;
-    return () => { watcher.dispose(); generation.current++; operation.current++; owner.current = null; refreshRef.current = () => {}; };
+    const onReset = (event: StorageEvent) => {
+      if (event.key !== "saku-books-reset" || !event.newValue) return;
+      try {
+        const reset = JSON.parse(event.newValue);
+        if (!owner.current || reset.userId !== owner.current) return;
+        setBooksRevision(value => value + 1); // Discard drafts opened before reset in another tab.
+        watcher.refresh();
+      } catch { /* Ignore unrelated or malformed browser storage. */ }
+    };
+    window.addEventListener("storage", onReset);
+    return () => { window.removeEventListener("storage", onReset); watcher.dispose(); generation.current++; operation.current++; owner.current = null; refreshRef.current = () => {}; };
   }, [router]);
 
   async function mutate(name: string, args: Record<string, unknown>, preview: () => void) {
@@ -128,6 +139,6 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         ] }]);
     });
   }
-  return <LedgerContext.Provider value={{ configured, accounts, entries, loading, saving, error, clearError: () => setError(""), refresh: () => refreshRef.current(), postJournal, createAccount, reverseEntry, recordOpening }}>{children}</LedgerContext.Provider>;
+  return <LedgerContext.Provider value={{ configured, accounts, entries, loading, saving, error, clearError: () => setError(""), refresh: () => refreshRef.current(), postJournal, createAccount, reverseEntry, recordOpening }}><Fragment key={booksRevision}>{children}</Fragment></LedgerContext.Provider>;
 }
 export function useLedger() { const value = useContext(LedgerContext); if (!value) throw new Error("LedgerProvider required"); return value; }

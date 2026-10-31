@@ -1,0 +1,26 @@
+.section { --reset-danger: #a12635; --reset-muted: #596273; }
+:global(html[data-theme="dark"]) .section { --reset-danger: #ffa6ad; --reset-muted: #b0b7c4; }
+.card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px 24px; }
+.card h3 { margin: 0 0 8px; font-size: 16px; }
+.section :global(.settings-section-heading) p { color: var(--reset-muted); font-size: 14px; }
+.card p { margin: 0; max-width: 72ch; font-size: 14px; line-height: 1.65; color: var(--reset-muted); }
+.card .notice { grid-column: 1 / -1; }
+.resetButton, .cancelButton { min-height: 44px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.resetButton { color: var(--reset-danger); border-color: var(--reset-danger); }
+.resetButton:hover:not(:disabled), .cancelButton:hover:not(:disabled) { background: var(--canvas); }
+.resetButton:disabled, .cancelButton:disabled { opacity: .5; cursor: not-allowed; }
+.resetButton:focus-visible, .cancelButton:focus-visible, .form input:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.form { display: grid; gap: 18px; color: var(--ink); font-size: 14px; line-height: 1.65; }
+.form p { margin: 0; }
+.form label { display: grid; gap: 8px; }
+.form input:not([type="checkbox"]) { min-width: 0; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: inherit; font-size: 16px; }
+.form :global(.password-input-wrap) input { padding-right: 48px; }
+.form :global(.password-visibility-toggle), .section :global(.modal-close) { width: 44px; height: 44px; min-height: 44px; }
+.section :global(.modal-backdrop) { backdrop-filter: none; background: #111827a8; } /* taste-skill-ignore: remove the inherited blur. */
+.section :global(.transaction-modal) { animation: none; }
+.warning { color: var(--reset-danger); }
+.form .checkbox { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; cursor: pointer; }
+.checkbox input { flex: 0 0 20px; width: 20px; height: 20px; margin: 3px 0; }
+.actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
+/* Two columns close on the card's own edges; the phone stacks the action. */
+@media (max-width: 650px) { .card { grid-template-columns: minmax(0, 1fr); }.resetButton, .cancelButton { width: 100%; }.actions { flex-direction: column-reverse; } }

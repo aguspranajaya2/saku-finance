@@ -20,6 +20,7 @@ export function LedgerStatus() {
     save: t("Could not save. Check your connection and account access, then try again.", "Belum dapat menyimpan. Periksa koneksi dan akses akun, lalu coba lagi."),
     invalid: t("Check the date, accounts, amounts (up to two decimals), and balanced debit/credit totals.", "Periksa tanggal, akun, nominal (maksimal dua desimal), dan keseimbangan debit/kredit."),
     duplicate: t("This account code is already in use. Choose a different code.", "Kode akun sudah dipakai. Gunakan kode lain."),
+    reset: t("These books were reset. Refresh and review the current records before posting again.", "Pembukuan sudah direset. Muat ulang dan periksa catatan terbaru sebelum mencatat kembali."),
   };
   return <>{!configured && <div className="demo-note"><span className="demo-dot" />{t("Preview books · changes reset on reload", "Buku pratinjau · perubahan direset saat dimuat ulang")}</div>}
     {error && <div className="inline-notice ledger-notice" role="alert"><span>{messages[error]}</span><button className="subtle-link" disabled={loading} onClick={refresh} type="button">{t("Refresh", "Muat ulang")}</button></div>}</>;

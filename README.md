@@ -101,6 +101,7 @@ Buat proyek di [Supabase Dashboard](https://supabase.com/dashboard). Setelah pro
 | 3 | [202610260002_security_hardening.sql](supabase/migrations/202610260002_security_hardening.sql) | Izin kolom transaksi, pencabutan koneksi bot, otorisasi struk, batas permintaan bersama, dan slot OCR. |
 | 4 | [202610270001_double_entry_ledger.sql](supabase/migrations/202610270001_double_entry_ledger.sql) | Akun, jurnal berpasangan, saldo awal, pembalik/penutup, migrasi transaksi lama, dan perintah pembukuan Telegram. |
 | 5 | [202610270002_decimal_amounts.sql](supabase/migrations/202610270002_decimal_amounts.sql) | Nominal dengan dua desimal secara tepat pada jurnal, saldo awal, Telegram, dan struk. Nilai lama tetap dalam rupiah. |
+| 6 | [202610310001_reset_bookkeeping.sql](supabase/migrations/202610310001_reset_bookkeeping.sql) | Reset pembukuan per akun, pencabutan struk/bot, dan pencegahan pengulangan permintaan yang sudah dihapus. Migrasi tidak mereset data secara otomatis. |
 
 Jalankan setiap migrasi satu kali. Untuk proyek yang sudah dikonfigurasi, terapkan migrasi yang belum dijalankan.
 
@@ -203,7 +204,7 @@ Pembayaran pokok pinjaman, penerimaan kembali piutang, dan transfer rekening sen
 
 ### Koreksi, penutup, dan laporan
 
-Jurnal yang sudah diposting tidak diedit atau dihapus melalui UI. Buka rincian jurnal lalu gunakan **Post reversal / Buat jurnal pembalik**, pilih tanggal pembalik, dan buat jurnal pengganti bila perlu. Riwayat asli tetap tersimpan; laporan per tanggal memperhitungkan tanggal efektif pembalik.
+Untuk koreksi rutin, jurnal yang sudah diposting memakai **Post reversal / Buat jurnal pembalik**. Pilih tanggal pembalik dan buat jurnal pengganti bila perlu. Riwayat asli tetap tersimpan; laporan per tanggal memperhitungkan tanggal efektif pembalik. Penghapusan seluruh pembukuan hanya tersedia melalui alur reset dengan konfirmasi khusus di bawah.
 
 Pada jurnal manual, pilih tujuan **Closing / Penutup** untuk memindahkan pendapatan/beban ke ekuitas/laba ditahan. Jurnal penutup hanya menerima akun pendapatan, beban, dan ekuitas. Laporan laba rugi mengecualikan jurnal penutup beserta pembaliknya; neraca saldo serta neraca tetap memperhitungkannya. Proses penutupan dilakukan manual, tanpa mengunci periode otomatis.
 
@@ -217,6 +218,19 @@ Transaksi dari versi lama serta konfirmasi struk belanja di bot masuk melalui ja
 4. Jika transaksi sebenarnya terjadi, pilih **Record activity / Catat aktivitas** dan simpan penggantinya satu kali dengan nominal, tanggal, jenis, dan akun yang benar. Jika transaksi duplikat, cukup buat pembalik.
 
 Jangan menambahkan transaksi bernilai negatif untuk mengoreksi. Jurnal yang sudah dibalik tidak dapat dibalik lagi.
+
+### Reset pembukuan
+
+Terapkan migrasi nomor 6 satu kali melalui **Supabase → SQL Editor**. Migrasi menambahkan fasilitas reset; menjalankan file migrasi tidak menghapus catatan keuangan yang sudah ada.
+
+Setelah login, buka **Settings / Pengaturan → Reset bookkeeping / Reset pembukuan**. Tekan tombol reset, masukkan kata sandi saat ini, ketik **RESET** persis, lalu centang persetujuan penghapusan permanen. Reset dilakukan setelah tombol konfirmasi terakhir ditekan.
+
+- **Dihapus:** seluruh jurnal beserta rincian, jurnal pembalik/penutup, transaksi lama, saldo awal, dan struk tertunda akun tersebut. Saldo, utang/piutang, dan laporan dimulai dari nol.
+- **Dipertahankan:** akun login, email, username, daftar akun/rekening termasuk akun buatan sendiri, serta preferensi tampilan browser.
+- **Telegram:** koneksi dan kode pairing dicabut, tombol struk lama tidak berlaku, dan job OCR lama dinonaktifkan. Buat pairing baru bila ingin menggunakan bot kembali.
+- **Permanen:** riwayat keuangan yang dihapus tidak dapat dipulihkan melalui aplikasi. Reset tidak menghapus data pengguna lain.
+
+Server memeriksa ulang sesi serta kata sandi menggunakan klien autentikasi sementara, membatasi percobaan, dan mengambil pemilik dari sesi terverifikasi. RPC penghapusan hanya dapat dieksekusi server. Penghapusan satu akun bersifat atomik; kegagalan membatalkan seluruh perubahan. ID reset yang sama tidak menghapus catatan baru saat permintaan diulang. Metadata ID reset/permintaan dipertahankan secara privat untuk mencegah permintaan lama menghidupkan kembali jurnal yang sudah dihapus; nominal dan keterangan tidak disimpan dalam metadata tersebut. Tab lain pada browser yang sama menyegarkan pembukuan dan membuang draf ketika menerima notifikasi reset; tab dengan penyimpanan browser diblokir dapat dimuat ulang manual.
 
 
 ## Login dengan username
